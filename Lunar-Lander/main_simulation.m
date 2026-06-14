@@ -1,5 +1,5 @@
-% PHASE 4: Lunar Lander Master Integration Loop
-clear; clc; close all;
+% Lunar Lander Master Integration Loop
+clear; clc;
 
 % --- 1. Define System Parameters (Apollo 11 Specs) ---
 % These lock in the physical constraints of our universe
@@ -120,22 +120,22 @@ ax1 = subplot(3,1,1);
 plot(history_time, history_y, 'b-', 'LineWidth', 2);
 hold on;
 yline(1.5, 'r--', 'Safety Buffer (1.5m)');
-title(sprintf('Lander Altitude [%s]', CONTROL_MODE), 'Interpreter', 'none');
+title(sprintf('Lander Altitude - %s', CONTROL_MODE), 'Interpreter', 'none');
 ylabel('Meters');
 grid on;
 
 % Plot 2: Engine Thrust & Veto Triggers
 ax2 = subplot(3,1,2); % 
-plot(history_time, history_thrust * 1e-3, 'k-', 'LineWidth', 1.5,'DisplayName','Commanded Thrust');
+plot(history_time, history_thrust * 1e-3, 'k.', 'DisplayName','Commanded Thrust');
 hold on;
 % Highlight areas where the Sidecar took control
 veto_indices = find(history_veto == 1);
 if ~isempty(veto_indices)
-    plot(history_time(veto_indices), history_thrust(veto_indices) * 1e-3, 'ro','DisplayName', 'Sidecar Override');
+    plot(history_time(veto_indices), history_thrust(veto_indices) * 1e-3, 'r.','DisplayName', 'Sidecar Override');
 end
-title(sprintf('Main Engine Thrust [%s] (Red dots = Sidecar Override)', CONTROL_MODE), 'Interpreter', 'none');
+title(sprintf('Main Engine Thrust - %s (Red dots = Sidecar Override)', CONTROL_MODE), 'Interpreter', 'none');
 ylabel('Thrust (kN)');
-grid on; legend
+grid on; legend('location', 'best');
 
 ax2.YAxis.Exponent = 0;          % disable exponent/scientific notation
 yticks = get(ax2, 'YTick');      % get current tick values
@@ -145,7 +145,7 @@ set(ax2, 'YTickLabel', arrayfun(@(v) num2str(v, '%.0f'), yticks, 'UniformOutput'
 % Plot 3: Fuel Depletion
 ax3 = subplot(3,1,3); 
 plot(history_time, history_fuel, 'g-', 'LineWidth', 2);
-title(sprintf('Fuel Mass Remaining [%s]', CONTROL_MODE), 'Interpreter', 'none');
+title(sprintf('Fuel Mass Remaining - %s', CONTROL_MODE), 'Interpreter', 'none');
 xlabel('Time (Seconds)');
 ylabel('Kilograms');
 grid on;

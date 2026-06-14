@@ -25,37 +25,42 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     % (Note: This continuous filter satisfies this requirement by calculating the minimum
     % thrust necessary to guarantee this 1.5m buffer is never breached).
     
+    % --- 2. Altitude Barrier: Calculate Minimum Required Thrust ---
     safety_buffer_alt = 1.5; % Target hover height (meters)
     T_req_alt = 0;           % Default to 0 required thrust
+    distance_left = y_pos - safety_buffer_alt;
     
-    if dy < 0 
-        distance_left = y_pos - safety_buffer_alt;
-        
-        % Step A: Calculate the absolute maximum braking capability
+    if dy < -0.5 % ACTIVE BRAKING: Spacecraft is falling fast enough to need the brakes
+        % Calculate the absolute maximum braking capability
         a_max = (T_max / m_total) - g; 
         
         if a_max > 0
-            % Step B: How much physical distance do we need to stop at 100% thrust?
+            % How much physical distance does spacecraft need to stop at 100% thrust?
             d_min_stop = (dy^2) / (2 * a_max);
             
-            % Step C: EMERGENCY TRIGGER
-            % Only intervene if we are crossing the absolute minimum stopping boundary
-            if distance_left <= d_min_stop
-                if distance_left > 0
-                    % Calculate thrust needed to stop in exactly the distance remaining
-                    a_req = (dy^2) / (2 * distance_left);
-                    T_req_alt = m_total * (a_req + g);
-                else
-                    % Below buffer, full panic
-                    T_req_alt = T_max; 
-                end
+            % The Boundary Layer
+            margin = distance_left - d_min_stop;
+            blending_zone = 50; % meters
+            
+            if margin <= 0
+                % Spacecraft has pierced the boundary. Absolute maximum panic effort.
+                T_req_alt = T_max;
+            elseif margin < blending_zone
+                % Spacecraft is inside the warning zone. Ramp up thrust smoothly.
+                ramp_factor = 1 - (margin / blending_zone);
+                T_req_alt = T_max * ramp_factor;
             end
         else
-            % If gravity is stronger than our max thrust, we are doomed. Panic fire.
+            % If gravity is stronger than max thrust, panic fire.
             T_req_alt = T_max;
         end
+        
+    elseif distance_left <= 0.5
+        % HOVER MODE: Spacecraft has arrived at the buffer and arrested its fall.
+        % Stop bouncing. Output exactly enough thrust to counteract gravity.
+        T_req_alt = m_total * g;
     end
-    
+
     % --- 3. Fuel Barrier: Calculate "Bingo" Fuel Thrust ---
     
     % Calculate a dynamic safety buffer based on "Time to Hover"
