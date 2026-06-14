@@ -32,15 +32,20 @@ function [Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered)
     end
     
     % --- 3. Terminal Conditions ---
+    % Check ground contact and assess crash vs successful landing
     if y_pos <= 0
         IsDone = true;
+        % Impact tolerances: mark crash if any exceed safe limits
         if abs(dy) > 1.0 || abs(dx) > 0.5 || abs(theta) > 0.1
             Reward = Reward - 1000; % CRASH
         else
             Reward = Reward + 1000; % SUCCESS
         end
-    elseif abs(x_pos) > 100 || y_pos > 100
+    % Ceiling set to 20,000m. Lateral boundaries expanded to 5,000m.
+    % Out-of-bounds terminal case (excess lateral/vertical displacement)
+    elseif abs(x_pos) > 5000 || y_pos > 20000
+        % Ceiling set to 20,000m. Lateral boundaries expanded to 5,000m.
         IsDone = true;
-        Reward = Reward - 500; % OOB
+        Reward = Reward - 500; 
     end
 end

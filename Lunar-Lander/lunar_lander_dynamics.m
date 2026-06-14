@@ -76,4 +76,4 @@ function dxdt = lunar_lander_dynamics(x, u, params)
     end
     
     % --- 6. Pack Derivatives for Integration ---
-    dxdt = [dx; dy; ddx;
+    dxdt = [dx; dy; ddx; ddy; dtheta; ddtheta; dm_fuel];
