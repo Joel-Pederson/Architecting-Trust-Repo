@@ -8,6 +8,7 @@ params.gravity = 1.62;            % m/s^2 (Lunar gravity)
 params.inertia = 24000;           % kg*m^2 (Calculated for a 4.3m x 7m box)
 params.max_main_thrust = 45040;   % Newtons (Actual thrust of the LEM DPS)
 params.max_mass_burn_rate = 15.6; % kg/s (Approximate DPS max flow rate)
+params.max_side_torque = 2000;    % Newton-meters (Physical maximum torque limit for the Reaction Control System (RCS))
 
 % --- 2. Simulation Settings ---
 dt = 0.02;          % Simulation time step (50 Hz control loop)
@@ -85,7 +86,7 @@ for step = 1:max_steps
     
     % D. The Reward Trap
     % Calculates how the AI performed (for future RL training)
-    [Reward, IsDone] = calculate_reward(x_next, u_actual, u_prev, VetoTriggered);
+    [Reward, IsDone] = calculate_reward(x_next, u_actual, u_prev, VetoTriggered, params); 
     
     % E. Log Data for Post-Flight Telemetry
     history_time(step)   = current_time;

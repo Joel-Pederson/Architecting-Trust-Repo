@@ -1,4 +1,4 @@
-function [Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered)
+function [Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered, params)
     % Unpack state variables
     x_pos = x(1);
     y_pos = x(2);
@@ -10,16 +10,27 @@ function [Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered)
     IsDone = false;
     Reward = 0;
     
+    % Extract dynamic hardware limits from the central struct
+    max_T   = params.max_main_thrust;
+    max_Tau = params.max_side_torque;
+    
     % --- 1. Continuous Penalties ---
     dist_penalty = -0.1 * sqrt(x_pos^2 + y_pos^2);
     tilt_penalty = -0.1 * abs(theta);
     
-    % We calculate fuel penalty based on what ACTUALLY happened
-    T_main = u_actual(1);
-    T_side = u_actual(2);
-    fuel_penalty = -0.5 * (T_main^2 + T_side^2); 
+    % Normalize controls mathematically to a percentage (0.0 to 1.0)
+    % This prevents the massive numeric difference between Newtons and Newton-meters 
+    % from skewing the AI's learning priorities.
+    norm_T_main = u_actual(1) / max_T;
+    norm_T_side = u_actual(2) / max_Tau;
     
-    smoothness_penalty = -0.1 * sum((u_actual - u_prev).^2);
+    fuel_penalty = -0.5 * (norm_T_main^2 + norm_T_side^2); 
+    
+    % Smoothness penalty normalized against the same bounds
+    norm_u_actual = [norm_T_main; norm_T_side];
+    norm_u_prev   = [u_prev(1) / max_T; u_prev(2) / max_Tau];
+    smoothness_penalty = -0.1 * sum((norm_u_actual - norm_u_prev).^2);
+    
     oob_penalty = -0.01 * (max(0, abs(x_pos) - 80)^2 + max(0, y_pos - 80)^2);
     
     Reward = dist_penalty + tilt_penalty + fuel_penalty + smoothness_penalty + oob_penalty;
