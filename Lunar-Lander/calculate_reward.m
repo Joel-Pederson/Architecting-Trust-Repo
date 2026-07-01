@@ -14,6 +14,9 @@ function [Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered,
     max_T   = params.max_main_thrust;
     max_Tau = params.max_side_torque;
     
+    % Load dynamic reward weights
+    weights = get_reward_weights();
+    
     % --- 1. SPATIAL NORMALIZATION ---
     % Normalize coordinates against expected max boundaries so penalties stay fractional
     norm_x = x_pos / 5000;
@@ -53,7 +56,7 @@ function [Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered,
     % This hurts, but it is mathematically better than dying.
     % This teaches the AI that relying on the safety net is worse than braking itself.
     if VetoTriggered
-        Reward = Reward - 5; 
+        Reward = Reward + weights.sidecar_veto; 
     end
     
     % --- 4. TERMINAL CONDITIONS ---
@@ -62,14 +65,14 @@ function [Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered,
         IsDone = true;
         % Impact tolerances: mark crash if any exceed safe limits
         if abs(dy) > 1.0 || abs(dx) > 0.5 || abs(theta) > 0.1
-            Reward = Reward - 50000; % CRASH (Catastrophic penalty)
+            Reward = Reward + weights.crash; % CRASH (Catastrophic penalty)
         else
-            Reward = Reward + 10000; % SUCCESS 
+            Reward = Reward + weights.success; % SUCCESS 
         end
     % Ceiling set to 20,000m. Lateral boundaries expanded to 5,000m.
     % Out-of-bounds terminal case (excess lateral/vertical displacement)
     elseif abs(x_pos) > 5000 || y_pos > 20000
         IsDone = true;
-        Reward = Reward - 50000; % OOB (Catastrophic penalty to prevent the Sideways Missile exploit)
+        Reward = Reward + weights.oob; % OOB (Catastrophic penalty to prevent the Sideways Missile exploit)
     end
 end
