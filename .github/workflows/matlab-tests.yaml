@@ -16,8 +16,8 @@ jobs:
       - name: Set up MATLAB
         uses: matlab-actions/setup-matlab@v2
 
-      # Step 3: Run all test scripts (*.m files starting or ending with 'test')
+      # Step 3: Run all test scripts (Now with the subfolder added to path)
       - name: Run Unit Tests
         uses: matlab-actions/run-command@v1
         with:
-          command: results = runtests('pwd', 'IncludeSubfolders', true); assertSuccess(results);
+          command: addpath('Lunar-Lander'); results = runtests('pwd', 'IncludeSubfolders', true); assertSuccess(results);
