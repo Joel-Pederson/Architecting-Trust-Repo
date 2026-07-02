@@ -1,13 +1,13 @@
-% Lunar Lander Master Integration Loop
+% Lunar Lander Master Integration Loop - Test Bench 
 clear; clc;
 
 % --- 1. Define System Parameters (Apollo 11 Specs) ---
 % Pulls the physics limits from the central configuration file
-params = get_lander_params();
+params = get_sim_params();
+dt = params.dt; 
 
 % --- 2. Simulation Settings ---
-dt = 0.02;          % Simulation time step (50 Hz control loop)
-max_steps = 10000;   % Maximum allowable time steps (200 seconds total)
+max_steps = params.max_steps;
 
 % THE MASTER SWITCH: 'DEAD_AI', 'MANUAL', or 'RL_AGENT'
 CONTROL_MODE = 'DEAD_AI'; 

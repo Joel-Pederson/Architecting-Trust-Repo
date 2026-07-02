@@ -8,7 +8,7 @@ function setupOnce(testCase)
 % Input arguments:
 % testCase - matlab.unittest.TestCase used to store TestData
     % Dynamically load the exact universe parameters from the central configs
-    testCase.TestData.params = get_lander_params();
+    testCase.TestData.params = get_sim_params();
     testCase.TestData.weights = get_reward_weights();
 end
 function testCatastrophicCrash(testCase)
