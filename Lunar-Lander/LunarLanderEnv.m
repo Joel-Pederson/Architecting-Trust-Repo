@@ -47,14 +47,17 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
         function [Observation, LoggedSignals] = reset(this)
             % RESET: Called automatically at the start of every new training episode
             
-            % Initial starting conditions for the Apollo lander
-            init_x = 0; % Later can add rand() here to randomize the starting point
-            init_y = 5000; 
-            init_dx = 0;
-            init_dy = -10; 
-            init_theta = 0;
-            init_dtheta = 0;
-            init_fuel = 1000;
+            % RANDOMIZED initial conditions for robust AI training. This is
+            % a light amount of variation, potentially should increase
+            % variation in the future.
+            % randn() generates a normally distributed random number (bell curve)
+            init_x = randn() * 100;           % Start up to ~100m off-center
+            init_y = 5000 + (randn() * 50);   % Start around 5000m, varying slightly
+            init_dx = randn() * 10;           % Start drifting sideways up to 10 m/s
+            init_dy = -10 + (randn() * 2);    % Start falling around -10 m/s
+            init_theta = randn() * 0.1;       % Start slightly tilted (up to ~5.7 deg). Mimics realistic mechanical wobble from detaching from the command module in orbit.
+            init_dtheta = randn() * 0.05;     % Start with a slight spin (up to ~2.8 deg/s). Forces the AI to learn to use side torque to stabilize immediately.
+            init_fuel = 1000;                 % Always start with full fuel (1000 kg). Ensures the AI has a consistent energy budget to solve the randomized physics puzzle.
             
             % Set the internal state
             this.State = [init_x; init_y; init_dx; init_dy; init_theta; init_dtheta; init_fuel];
