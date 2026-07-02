@@ -1,0 +1,23 @@
+name: MATLAB Automated Tests
+
+# Run this workflow every time code is pushed or a pull request is opened
+on: [push, pull_request]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Download your repository's code onto the GitHub server
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      # Step 2: Request a free MATLAB environment from MathWorks
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v2
+
+      # Step 3: Run all test scripts (With folder added to path and pwd unquoted)
+      - name: Run Unit Tests
+        uses: matlab-actions/run-command@v1
+        with:
+          command: addpath('Lunar-Lander'); results = runtests(pwd, 'IncludeSubfolders', true); assertSuccess(results);

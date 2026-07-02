@@ -2,13 +2,8 @@
 clear; clc;
 
 % --- 1. Define System Parameters (Apollo 11 Specs) ---
-% These lock in the physical constraints of our universe
-params.dry_mass = 4280;           % kg (Actual empty weight of LEM)
-params.gravity = 1.62;            % m/s^2 (Lunar gravity)
-params.inertia = 24000;           % kg*m^2 (Calculated for a 4.3m x 7m box)
-params.max_main_thrust = 45040;   % Newtons (Actual thrust of the LEM DPS)
-params.max_mass_burn_rate = 15.6; % kg/s (Approximate DPS max flow rate)
-params.max_side_torque = 2000;    % Newton-meters (Physical maximum torque limit for the Reaction Control System (RCS))
+% Pulls the physics limits from the central configuration file
+params = get_lander_params();
 
 % --- 2. Simulation Settings ---
 dt = 0.02;          % Simulation time step (50 Hz control loop)
@@ -169,7 +164,7 @@ setappdata(fig, 'XAxisSyncListeners', hlisteners);
 [script_dir, ~, ~] = fileparts(mfilename('fullpath'));
 
 % Define the target directory for our test artifacts inside the repo
-log_dir = fullfile(script_dir, 'flight_logs');
+log_dir = fullfile(script_dir, 'Flight_Logs');
 
 % Create the directory if it doesn't exist yet
 if ~exist(log_dir, 'dir')
