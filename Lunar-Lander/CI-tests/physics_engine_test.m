@@ -8,17 +8,16 @@ function tests = test_dynamics
 % tests - functiontests structure for use with runtests
     tests = functiontests(localfunctions);
 end
-
 function setupOnce(testCase)
     % Dynamically load the exact universe parameters from the central config
     testCase.TestData.params = get_lander_params();
 end
-
 function testEmptyFuelTank(testCase)
     % Scenario: Fuel tank is completely empty (m_fuel = 0), but AI commands 100% thrust
     x = [0; 1000; 0; -10; 0; 0; 0]; 
     u = [testCase.TestData.params.max_main_thrust; 0];
     
+    % Compute state time-derivative for given state and input
     dxdt = lunar_lander_dynamics(x, u, testCase.TestData.params);
     
     % dm_fuel (the first derivative of the 7th element) should be exactly 0, preventing negative mass
