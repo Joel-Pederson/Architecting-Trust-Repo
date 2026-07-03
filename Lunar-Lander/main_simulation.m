@@ -27,6 +27,7 @@ u_prev = [0; 0];
 history_time   = zeros(1, max_steps);
 history_x      = zeros(1, max_steps);
 history_y      = zeros(1, max_steps);
+history_dy     = zeros(1, max_steps);
 history_theta  = zeros(1, max_steps);
 history_fuel   = zeros(1, max_steps);
 history_veto   = zeros(1, max_steps);
@@ -89,6 +90,7 @@ for step = 1:max_steps
     history_time(step)   = current_time;
     history_x(step)      = x_current(1);
     history_y(step)      = x_current(2);
+    history_dy(step)     = x_current(4);
     history_theta(step)  = x_current(5);
     history_fuel(step)   = x_current(7);
     history_veto(step)   = VetoTriggered;
@@ -104,6 +106,7 @@ for step = 1:max_steps
         history_time   = history_time(1:step);
         history_x      = history_x(1:step);
         history_y      = history_y(1:step);
+        history_dy     = history_dy(1:step);
         history_theta  = history_theta(1:step);
         history_fuel   = history_fuel(1:step);
         history_veto   = history_veto(1:step);
@@ -187,4 +190,4 @@ fprintf('Telemetry saved successfully to: %s\n', filename);
 % --- 8. ANIMATED VISUALIZATION ---
 % Animate the lander using the recorded telemetry
 disp('Launching animated visualization...');
-animate_lunar_lander(history_time, history_x, history_y, history_theta, history_thrust, history_fuel, params);
+animate_lunar_lander(history_time, history_x, history_y, history_dy, history_theta, history_thrust, history_fuel, history_veto, params);
