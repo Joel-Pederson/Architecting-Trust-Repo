@@ -6,6 +6,11 @@ function tests = test_safety_sidecar
 end
 function setupOnce(testCase)
 % Setup shared parameters used across all tests in this file
+    % Dynamically add core and RL-training-harness to path
+    scriptPath = fileparts(mfilename('fullpath'));
+    addpath(fullfile(scriptPath, '..', 'core'));
+    addpath(fullfile(scriptPath, '..', 'RL-training-harness'));
+    
     testCase.TestData.params = struct('dry_mass', 4280, 'gravity', 1.62, ...
         'inertia', 24000, 'max_main_thrust', 45040, ...
         'max_mass_burn_rate', 15.6, 'max_side_torque', 2000);

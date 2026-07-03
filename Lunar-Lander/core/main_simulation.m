@@ -1,6 +1,11 @@
 % Lunar Lander Master Integration Loop - Test Bench 
 clear; clc;
 
+% Dynamically add the RL-training-harness folder to the path 
+% so main_simulation can access calculate_reward.m and get_reward_weights.m
+currentFolder = fileparts(mfilename('fullpath'));
+addpath(fullfile(currentFolder, '..', 'RL-training-harness'));
+
 % --- 1. Define System Parameters (Apollo 11 Specs) ---
 % Pulls the physics limits from the central configuration file
 params = get_sim_params();

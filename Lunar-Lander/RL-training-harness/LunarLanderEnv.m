@@ -1,8 +1,7 @@
 classdef LunarLanderEnv < rl.env.MATLABEnvironment
-    % LUNARLANDERENV: Reinforcement Learning Environment Wrapper. Written
-    % with Gemini assistance
-    % This class acts as the bridge between the physical simulation and the AI agent.
-    
+    % LUNARLANDERENV: Reinforcement Learning Environment Wrapper. Written with Gemini assistance
+    % This class acts as the bridge between the physical simulation and the AI agent
+
     properties
         % Hardware Limits and Reward Weights
         params
