@@ -9,8 +9,13 @@ function tests = test_dynamics
     tests = functiontests(localfunctions);
 end
 function setupOnce(testCase)
+    % Dynamically add core and RL-training-harness to path
+    scriptPath = fileparts(mfilename('fullpath'));
+    addpath(fullfile(scriptPath, '..', 'core'));
+    addpath(fullfile(scriptPath, '..', 'RL-training-harness'));
     % Dynamically load the exact universe parameters from the central config
-    testCase.TestData.params = get_lander_params();
+    testCase.TestData.params = get_sim_params();
+    
 end
 function testEmptyFuelTank(testCase)
     % Scenario: Fuel tank is completely empty (m_fuel = 0), but AI commands 100% thrust

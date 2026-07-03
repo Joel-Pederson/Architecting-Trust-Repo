@@ -20,4 +20,4 @@ jobs:
       - name: Run Unit Tests
         uses: matlab-actions/run-command@v1
         with:
-          command: addpath('Lunar-Lander'); results = runtests(pwd, 'IncludeSubfolders', true); assertSuccess(results);
+          command: addpath(genpath(pwd)); results = runtests(pwd, 'IncludeSubfolders', true); assertSuccess(results);
