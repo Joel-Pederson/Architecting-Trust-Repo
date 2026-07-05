@@ -4,10 +4,9 @@ tests = functiontests(localfunctions);
 end
 function setupOnce(testCase)
 %SETUPONCE - Load shared test data used by all test cases
-% Dynamically add core and RL-training-harness to path
+% Dynamically add the entire repository (and all subfolders) to the MATLAB path
 scriptPath = fileparts(mfilename('fullpath'));
-addpath(fullfile(scriptPath, '..', 'core'));
-addpath(fullfile(scriptPath, '..', 'RL-training-harness'));
+addpath(genpath(fullfile(scriptPath, '..')));
 %
 % Input arguments:
 % testCase - matlab.unittest.TestCase used to store TestData

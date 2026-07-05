@@ -10,6 +10,6 @@ function params = get_sim_params()
 
     % Simulation Parameters
     params.dt = 0.02;                 % Simulation Timing (50Hz) seconds per frame
-    params.max_steps = 10000;         % Maximum allowable time steps (200 seconds total)
+    params.max_steps = 45000;         % Maximum allowable time steps (900 seconds / 15 minutes total)
 
 end

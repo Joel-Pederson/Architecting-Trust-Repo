@@ -5,14 +5,17 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     % --- 1. Unpack State & Parameters ---
     y_pos   = x(2);
     dy      = x(4);
+    theta   = x(5);
+    dtheta  = x(6);
     m_fuel  = x(7); % Current fuel mass in kg
     
-    % The total mass of the lander changes as fuel burns!
+    % The total mass of the lander changes as fuel burns
     m_dry   = params.dry_mass; 
     m_total = m_dry + m_fuel; 
     
     g       = params.gravity;
     T_max   = params.max_main_thrust; 
+    Tau_max = params.max_side_torque;
     mdot    = params.max_mass_burn_rate; % kg/s burned at 100% thrust
     
     % Initialize outputs
@@ -21,38 +24,46 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     
     % --- 2. Altitude Barrier: Calculate Minimum Required Thrust ---
     % "The Action Governor shall assume control authority from the Primary
-    % AI Agent when the current altitude is less than or equal to d_stop + 1.5 meters."
+    % AI Agent when the current altitude is less than or equal to d_stop + safety_buffer_alt."
     % (Note: This continuous filter satisfies this requirement by calculating the minimum
     % thrust necessary to guarantee this 1.5m buffer is never breached).
-    
-    % --- 2. Altitude Barrier: Calculate Minimum Required Thrust ---
     safety_buffer_alt = 1.5; % Target hover height (meters)
     T_req_alt = 0;           % Default to 0 required thrust
     distance_left = y_pos - safety_buffer_alt;
     
     if dy < -0.5 % ACTIVE BRAKING: Spacecraft is falling fast enough to need the brakes
-        % Calculate the absolute maximum braking capability
-        a_max = (T_max / m_total) - g; 
+        % Calculate the absolute maximum vertical braking capability, considering current tilt
+        a_max = (T_max * cos(theta) / m_total) - g; 
         
         if a_max > 0
             % How much physical distance does spacecraft need to stop at 100% thrust?
             d_min_stop = (dy^2) / (2 * a_max);
-            
-            % The Boundary Layer
             margin = distance_left - d_min_stop;
-            blending_zone = 50; % meters
-            
-            if margin <= 0
-                % Spacecraft has pierced the boundary. Absolute maximum panic effort.
-                T_req_alt = T_max;
-            elseif margin < blending_zone
-                % Spacecraft is inside the warning zone. Ramp up thrust smoothly.
-                ramp_factor = 1 - (margin / blending_zone);
-                T_req_alt = T_max * ramp_factor;
-            end
         else
-            % If gravity is stronger than max thrust, panic fire.
+            % If gravity is stronger than vertical thrust (due to tilt or low power), panic.
+            margin = -inf; 
+        end
+        
+        blending_zone = 50; % meters
+        
+        if margin < blending_zone
+            % --- ROTATIONAL CBF (Action Governor) ---
+            % If we are entering the danger zone, we MUST be upright to survive.
+            % Seize the RCS side thrusters using a high-gain PD controller to force theta to 0.
+            kp = Tau_max / (pi/4); % Full torque commanded at 45 degrees
+            kd = Tau_max / (pi/4);
+            
+            Tau_req = -kp * theta - kd * dtheta;
+            u_actual(2) = max(-Tau_max, min(Tau_req, Tau_max));
+        end
+        
+        if margin <= 0
+            % Spacecraft has pierced the boundary. Absolute maximum panic effort.
             T_req_alt = T_max;
+        elseif margin < blending_zone
+            % Spacecraft is inside the warning zone. Ramp up thrust smoothly.
+            ramp_factor = 1 - (margin / blending_zone);
+            T_req_alt = T_max * ramp_factor;
         end
         
     elseif distance_left <= 0.5
@@ -78,8 +89,13 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     
     if dy < 0
         % How fast can spacecraft physically stop if we floor it?
-        a_max = (T_max / m_total) - g;
-        t_stop = abs(dy) / a_max; % Time to stop
+        a_max = (T_max * cos(theta) / m_total) - g;
+        
+        if a_max <= 0
+            t_stop = inf; % If we can't overcome gravity due to tilt, we will never stop
+        else
+            t_stop = abs(dy) / a_max; % Time to stop
+        end
         
         % How much fuel will that emergency stop cost?
         fuel_needed_to_stop = mdot * t_stop;
@@ -110,8 +126,8 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     % --- 5. LOGGING & STATE AUGMENTATION ---
     
     % Check if the Sidecar had to alter the AI's command
-    % (Adding a small tolerance of 0.1N to account for floating point math)
-    if (u_actual(1) - u_nominal(1)) > 0.1 
+    % (Adding a small tolerance to account for floating point math)
+    if abs(u_actual(1) - u_nominal(1)) > 0.1 || abs(u_actual(2) - u_nominal(2)) > 0.1
         VetoTriggered = true;
     end
     

@@ -9,10 +9,9 @@ function tests = test_dynamics
     tests = functiontests(localfunctions);
 end
 function setupOnce(testCase)
-    % Dynamically add core and RL-training-harness to path
+    % Dynamically add the entire repository (and all subfolders) to the MATLAB path
     scriptPath = fileparts(mfilename('fullpath'));
-    addpath(fullfile(scriptPath, '..', 'core'));
-    addpath(fullfile(scriptPath, '..', 'RL-training-harness'));
+    addpath(genpath(fullfile(scriptPath, '..')));
     % Dynamically load the exact universe parameters from the central config
     testCase.TestData.params = get_sim_params();
     

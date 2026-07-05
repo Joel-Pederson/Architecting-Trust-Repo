@@ -1,12 +1,12 @@
 % Lunar Lander Master Integration Loop - Test Bench 
 clear; clc;
 
-% Dynamically add the RL-training-harness folder to the path 
-% so main_simulation can access calculate_reward.m and get_reward_weights.m
+% Dynamically add the entire repository (and all subfolders) to the MATLAB path
 currentFolder = fileparts(mfilename('fullpath'));
-addpath(fullfile(currentFolder, '..', 'RL-training-harness'));
+repoRoot = fullfile(currentFolder, '..');
+addpath(genpath(repoRoot));
 
-% --- 1. Define System Parameters (Apollo 11 Specs) ---
+% --- 1. Load System Parameters (Apollo 11 Specs) ---
 % Pulls the physics limits from the central configuration file
 params = get_sim_params();
 dt = params.dt; 
@@ -19,13 +19,14 @@ CONTROL_MODE = 'DEAD_AI';
 
 % If testing the RL agent, load the brain trained in Phase 5
 if strcmp(CONTROL_MODE, 'RL_AGENT')
-    %load('trained_lunar_agent.mat', 'agent'); 
+    load('trained_lunar_agent.mat', 'agent'); 
 end
 
 % --- 3. Initial State ---
 % State Vector: [x, y, dx, dy, theta, dtheta, m_fuel]
-% Scenario: The LEM starting powered descent
-x_current = [0; 15000; 0; -20; 0; 0; 8200];
+% Scenario: Powered Descent Initiation (PDI) from lunar orbit
+% Altitude: 15000m, Orbital Velocity: 1700 m/s, Pitch: Horizontal (pi/2) rad
+x_current = [0; 15000; 1700; 0; pi/2; 0; 8200];
 u_prev = [0; 0];
 
 % --- 4. Telemetry Logging Arrays ---
@@ -84,7 +85,7 @@ for step = 1:max_steps
     % Discrete Euler Integration to step physical time forward
     x_next = x_current + dxdt * dt;
     
-    % D. The Reward Trap
+    % D. Determine Agent Reward
     % Calculates how the AI performed (for future RL training)
     [Reward, IsDone] = calculate_reward(x_next, u_actual, u_prev, VetoTriggered, params); 
     
@@ -181,4 +182,4 @@ end
 filename = fullfile(log_dir, sprintf('telemetry_%s.png', CONTROL_MODE));
 exportgraphics(fig, filename, 'Resolution', 300);
 
-fprintf('Telemetry saved successfully to: %s\n', filename);
+fprintf('Telemetry saved successfully to: %s\\n', filename);

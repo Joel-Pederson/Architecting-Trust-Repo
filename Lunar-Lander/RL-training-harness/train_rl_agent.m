@@ -1,9 +1,8 @@
 % --- Reinforcement Learning Agent Setup & Training ---
-% Dynamically get the current script's folder
+% Dynamically add the entire repository (and all subfolders) to the MATLAB path
 currentFolder = fileparts(mfilename('fullpath'));
-
-% Add the core folder to the path so it can see the physics engine
-addpath(fullfile(currentFolder, '..', 'core'));
+repoRoot = fullfile(currentFolder, '..');
+addpath(genpath(repoRoot));
 
 % --- 1. Load the Environment ---
 % Initialize the wrapper
