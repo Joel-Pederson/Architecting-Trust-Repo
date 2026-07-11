@@ -8,7 +8,7 @@ addpath(genpath(repoRoot));
 
 % --- 1. Load System Parameters (Apollo 11 Specs) ---
 % Pulls the physics limits from the central configuration file
-params = get_sim_params();
+params = get_sim_params(); % Initializes the lander state to match the historical Powered Descent Initiation (PDI)
 dt = params.dt; 
 
 % --- 2. Simulation Settings ---
@@ -68,10 +68,15 @@ for step = 1:max_steps
             % 1. Provide the agent with the observation state
             obs = get_ai_observation(x_current, params); 
             
-            % 2. Ask the agent for its requested action
-            % action_cell = getAction(agent, obs);
-            % u_nominal = cell2mat(action_cell); 
-            u_nominal = [0; 0]; % Placeholder until agent is trained
+            % 2. Ask the trained neural network for its raw requested action [-1, 1]
+            action_cell = getAction(agent, obs);
+            raw_action = cell2mat(action_cell); 
+            
+            % 3. Scale neural net output to physical hardware limits
+            u_thrust = (raw_action(1) + 1) / 2 * params.max_main_thrust;
+            u_torque = raw_action(2) * params.max_side_torque;
+            
+            u_nominal = [u_thrust; u_torque];
     end
     
     % B. The Action Governor (Safety Filter)

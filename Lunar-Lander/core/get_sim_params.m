@@ -1,6 +1,6 @@
 function params = get_sim_params()
     % Lander Parameters: Single source of truth for the physical universe
-    % Apollo 11 Specifications
+    % Apollo 11 Specifications - State based off the historical Apollo Powered Descent Initiation (PDI)
     params.dry_mass = 4280;           % kg (Actual empty weight of LEM)
     params.gravity = 1.62;            % m/s^2 (Lunar gravity)
     params.inertia = 24000;           % kg*m^2 (Calculated for a 4.3m x 7m box)
