@@ -24,9 +24,9 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
         function this = LunarLanderEnv()
             % CONSTRUCTOR: Defines the rules of the universe for the AI
             
-            % 1. Define Observation Space (7 Variables)
-            % [x; y; dx; dy; theta; dtheta; m_fuel]
-            obsInfo = rlNumericSpec([7 1]);
+            % 1. Define Observation Space (8 Variables)
+            % [x; y; dx; dy; theta; dtheta; m_main_fuel; m_rcs_fuel]
+            obsInfo = rlNumericSpec([8 1]);
             obsInfo.Name = 'LunarLanderStates';
             
             % 2. Define Action Space (2 Variables)
@@ -56,10 +56,11 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             init_dy = -10 + (randn() * 2);    % Start falling around -10 m/s
             init_theta = randn() * 0.1;       % Start slightly tilted (up to ~5.7 deg). Mimics realistic mechanical wobble from detaching from the command module in orbit.
             init_dtheta = randn() * 0.05;     % Start with a slight spin (up to ~2.8 deg/s). Forces the AI to learn to use side torque to stabilize immediately.
-            init_fuel = 1000;                 % Always start with full fuel (1000 kg). Ensures the AI has a consistent energy budget to solve the randomized physics puzzle.
+            init_main_fuel = 8200;            % Always start with full main fuel (8200 kg). Ensures the AI has a consistent energy budget to solve the randomized physics puzzle.
+            init_rcs_fuel = 300;              % Always start with full RCS fuel (300 kg).
             
             % Set the internal state
-            this.State = [init_x; init_y; init_dx; init_dy; init_theta; init_dtheta; init_fuel];
+            this.State = [init_x; init_y; init_dx; init_dy; init_theta; init_dtheta; init_main_fuel; init_rcs_fuel];
             
             % Reset historical tracking
             this.u_prev = [0; 0];

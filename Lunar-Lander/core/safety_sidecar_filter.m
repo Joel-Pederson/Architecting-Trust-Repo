@@ -3,10 +3,9 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     % 
     % --- ARCHITECTURE OVERVIEW ---
     % This function serves as the "Action Governor" in a Simplex Architecture. 
-    % It acts as an impenetrable safety net wrapped around the primary AI agent.
+    % It acts as a safety net wrapped around the primary AI agent.
     % While the Agent is treated as an untrusted "black box", 
-    % this sidecar uses strictly deterministic, formal Newtonian physics to mathematically 
-    % guarantee the spacecraft will never breach lethal boundaries.
+    % this sidecar uses strictly deterministic, formal Newtonian physics to protect the spacecraft.
     % 
     % It operates statelessly on a microsecond basis, intercepting the AI's requested 
     % actions (u_nominal) and passing them through three distinct survival filters:
@@ -19,23 +18,33 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     
     % --- 1. UNPACK STATE & PARAMETERS ---
     % The sidecar evaluates the exact physical reality of the craft at this exact millisecond.
+    dx      = x(3); % Horizontal velocity
     y_pos   = x(2); % Current altitude (meters)
     dy      = x(4); % Current vertical velocity (m/s). Negative means falling.
     theta   = x(5); % Current pitch angle from vertical (radians)
     dtheta  = x(6); % Current angular velocity (rad/s)
-    m_fuel  = x(7); % Current fuel mass (kg)
+    m_main_fuel = x(7); % Current main fuel mass (kg)
+    m_rcs_fuel  = x(8); % Current RCS propellant mass (kg)
     
     % Recalculate total mass (Mass dynamically changes as fuel is burned)
     m_dry   = params.dry_mass; 
-    m_total = m_dry + m_fuel; 
+    m_total = m_dry + m_main_fuel + m_rcs_fuel; 
     
     % Unpack engine and physics constants
     g       = params.gravity;
+    r_lunar = params.r_lunar;
     T_max   = params.max_main_thrust; 
     Tau_max = params.max_side_torque;
     mdot    = params.max_mass_burn_rate; 
     
+    % --- 1b. HIGHER FIDELITY PHYSICS ---
+    % Calculate Centrifugal Lift (orbital mechanics)
+    a_centrifugal = (dx^2) / (r_lunar + y_pos);
+    g_apparent = max(0, g - a_centrifugal); % Apparent gravity is reduced by orbital velocity
+    
     % Initialize the output to assume the AI is safe, until proven otherwise.
+    u_actual = u_nominal;
+    VetoTriggered = false;
     u_actual = u_nominal;
     VetoTriggered = false;
     
@@ -57,7 +66,8 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
         % Calculate absolute maximum vertical braking capability.
         % It is necessary to factor in cos(theta), because if the ship is tilted, a portion of the 
         % main engine's thrust is wasted pushing sideways instead of fighting gravity.
-        a_max = (T_max * cos(theta) / m_total) - g; 
+        a_max = (T_max * cos(theta) / m_total) - g_apparent; % Note this is net vertical acceleration due to subtracting apparent gravity.
+                                                             % 0 degrees is pointing straight up (the y-axis)
         
         if a_max > 0
             % The ship has enough vertical lift to overcome gravity.
@@ -111,8 +121,8 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
         
     elseif distance_left <= 0.5
         % HOVER MODE: Spacecraft has arrived at the safety buffer and arrested its fall.
-        % To prevent bouncing, output exactly enough thrust to counteract gravity (F = mg).
-        T_req_alt = m_total * g;
+        % To prevent bouncing, output exactly enough thrust to counteract apparent gravity (F = mg).
+        T_req_alt = m_total * g_apparent;
     end
 
     % --- 4. FUEL BARRIER (BINGO FUEL) ---
@@ -120,7 +130,7 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     % maintain a 1.0g hover for a duration of at least 3.0 seconds."
     
     hover_time_reserve = 3.0; % 3 seconds of emergency hover fuel
-    thrust_to_hover = m_total * g; % Thrust required to hover
+    thrust_to_hover = m_total * g_apparent; % Thrust required to hover
     
     % Calculate fuel burn rate during hover (Linear scaling based on max flow rate)
     burn_rate_at_hover = mdot * (thrust_to_hover / T_max);
@@ -131,7 +141,7 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     
     if dy < 0
         % Calculate how fast the spacecraft can physically stop vertically (just like the Altitude barrier)
-        a_max = (T_max * cos(theta) / m_total) - g;
+        a_max = (T_max * cos(theta) / m_total) - g_apparent;
         
         if a_max <= 0
             t_stop = inf; % If gravity cannot be overcome due to tilt, it will take infinite time to stop
@@ -144,13 +154,19 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
         
         % "Upon reaching bingo fuel level, the Action Governor shall immediately force a maximum-thrust suicide burn"
         % If the tank level drops to the exact amount of fuel required to stop + the 3-second reserve...
-        if m_fuel <= (fuel_needed_to_stop + safety_buffer_fuel)
+        if m_main_fuel <= (fuel_needed_to_stop + safety_buffer_fuel)
             % Force the AI into a "Suicide Burn" to land the ship NOW before it physically runs out of gas.
             T_req_fuel = T_max;
             
-            % Also command zero side torque to prioritize main thrust stability during Bingo Fuel
-            u_actual(2) = 0;
+            % BUG FIX: We DO NOT zero out the torque here. The ship might be tilted!
+            % We must allow the Rotational CBF to continue fighting to right the ship.
         end
+    end
+    
+    % --- 4b. RCS FUEL BARRIER ---
+    % If the sidecar or the AI depletes the RCS fuel, it is physically impossible to output torque.
+    if m_rcs_fuel <= 0
+        u_actual(2) = 0; % Override AI and Rotational CBF
     end
     
     % --- 5. ACTION FILTER & HARDWARE CLAMPS ---
@@ -163,7 +179,7 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     T_upper_bound = T_max;
     
     % Ensure the Sidecar obeys the laws of physics: Do not allow the safety net to demand more thrust than exists.
-    T_lower_bound = min(T_lower_bound, T_upper_bound);
+    T_lower_bound = min(T_lower_bound, T_upper_bound); % bare minimum threshold to maintain safe flight 
     
     % Combine everything: Allow the AI to command whatever it wants, AS LONG AS it is bounded 
     % between the Survival Floor (T_lower_bound) and the Hardware Ceiling (T_upper_bound).
@@ -174,7 +190,7 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     % Check if the Sidecar had to alter the AI's requested command.
     % A small tolerance (0.1) is added to account for floating point math inaccuracies.
     if abs(u_actual(1) - u_nominal(1)) > 0.1 || abs(u_actual(2) - u_nominal(2)) > 0.1
-        % This flag is sent back to the environment. The AI receives a MASSIVE penalty 
+        % This flag is sent back to the environment. The AI receives a large penalty 
         % every time this triggers. This teaches the AI to fear the boundaries and learn 
         % to fly so perfectly that the Sidecar never has to wake up.
         VetoTriggered = true;
@@ -183,6 +199,6 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     % Export the continuous barrier values (h). 
     % By feeding these values directly into the neural network's observation state, 
     % the AI is given "eyes" to mathematically see the invisible boundaries approaching.
-    h_alt  = y_pos - ((dy^2) / (2 * ((T_max / m_total) - g)));
-    h_fuel = m_fuel - (fuel_needed_to_stop + safety_buffer_fuel);
+    h_alt  = y_pos - ((dy^2) / (2 * ((T_max / m_total) - g_apparent)));
+    h_fuel = m_main_fuel - (fuel_needed_to_stop + safety_buffer_fuel);
 end

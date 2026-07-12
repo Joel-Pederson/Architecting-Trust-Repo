@@ -23,10 +23,10 @@ if strcmp(CONTROL_MODE, 'RL_AGENT')
 end
 
 % --- 3. Initial State ---
-% State Vector: [x, y, dx, dy, theta, dtheta, m_fuel]
+% State Vector: [x, y, dx, dy, theta, dtheta, m_main_fuel, m_rcs_fuel]
 % Scenario: Powered Descent Initiation (PDI) from lunar orbit
-% Altitude: 15000m, Orbital Velocity: 1700 m/s, Pitch: Horizontal (pi/2) rad
-x_current = [0; 15000; 1700; 0; pi/2; 0; 8200];
+% Set Initial State: The exact state vector at Powered Descent Initiation (PDI)
+x_current = [0; 15000; 1700; 0; pi/2; 0; 8200; 300];
 u_prev = [0; 0];
 
 % --- 4. Telemetry Logging Arrays ---
