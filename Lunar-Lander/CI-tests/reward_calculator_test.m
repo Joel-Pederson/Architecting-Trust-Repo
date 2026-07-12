@@ -19,7 +19,7 @@ function testCatastrophicCrash(testCase)
 %
 % Scenario: lethal vertical impact should end episode and penalize heavily.
 % Scenario: Hits the ground (y=0) at a lethal 50 m/s
-x = [0; 0; 0; -50; 0; 0; 1000];
+x = [0; 0; 0; -50; 0; 0; 1000; 300];
 u_actual = [0; 0];
 u_prev = [0; 0];
 VetoTriggered = false;
@@ -41,7 +41,7 @@ function testSoftLanding(testCase)
 %
 % Scenario: gentle touchdown gives large positive payout.
 % Scenario: Perfect touchdown (y=0) at a gentle 0.5 m/s
-x = [0; 0; 0; -0.5; 0; 0; 1000];
+x = [0; 0; 0; -0.5; 0; 0; 1000; 300];
 u_actual = [0; 0];
 u_prev = [0; 0];
 VetoTriggered = false;

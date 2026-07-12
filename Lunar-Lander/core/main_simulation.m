@@ -90,10 +90,9 @@ for step = 1:max_steps
     % Discrete Euler Integration to step physical time forward
     x_next = x_current + dxdt * dt;
     
-    % D. Determine Agent Reward
-    % Calculates how the AI performed (for future RL training)
-    [Reward, IsDone] = calculate_reward(x_next, u_actual, u_prev, VetoTriggered, params); 
-    
+    % D. Terminal Condition Check (Physics Boundary)
+    % The simulation ends if the spacecraft hits the ground
+    IsDone = (x_next(2) <= 0);
     % E. Log Data for Post-Flight Telemetry
     history_time(step)   = current_time;
     history_y(step)      = x_current(2);
