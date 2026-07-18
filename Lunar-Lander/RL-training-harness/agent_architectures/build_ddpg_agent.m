@@ -1,13 +1,23 @@
-function agent = build_ddpg_agent(obsInfo, actInfo, dt)
+function agent = build_ddpg_agent(obsInfo, actInfo, dt, hyperparams)
 % BUILD_DDPG_AGENT Constructs a Deep Deterministic Policy Gradient Agent
 %
 % Inputs:
-%   obsInfo - Observation specification from the environment
-%   actInfo - Action specification from the environment
-%   dt      - Simulation time step (for sample time)
+%   obsInfo     - Observation specification from the environment
+%   actInfo     - Action specification from the environment
+%   dt          - Simulation time step (for sample time)
+%   hyperparams - (Optional) Struct containing tuning parameters
 %
 % Outputs:
-%   agent   - Fully configured rlDDPGAgent object
+%   agent       - Fully configured rlDDPGAgent object
+
+    if nargin < 4
+        % Default hyperparameters if none are provided
+        hyperparams = struct();
+        hyperparams.ActorLR = 1e-4;
+        hyperparams.CriticLR = 1e-3;
+        hyperparams.Gamma = 0.99;
+        hyperparams.NoiseVariance = 0.3;
+    end
 
     % --- 1. Build the Critic Network ---
     % The Critic takes two inputs (The State and The Action) and merges them
@@ -63,8 +73,21 @@ function agent = build_ddpg_agent(obsInfo, actInfo, dt)
     % Set the agent's clock to match our physics engine exactly
     agentOpts = rlDDPGAgentOptions('SampleTime', dt);
     
-    % Use default exploration noise model (Ornstein-Uhlenbeck)
-    % The default handles variance appropriately across all MATLAB versions
+    % --- Inject Hyperparameters ---
+    agentOpts.DiscountFactor = hyperparams.Gamma;
+    agentOpts.ActorOptimizerOptions.LearnRate = hyperparams.ActorLR;
+    agentOpts.CriticOptimizerOptions.LearnRate = hyperparams.CriticLR;
+    
+    % Try to inject Exploration Noise, depending on MATLAB version
+    try
+        if isprop(agentOpts, 'NoiseOptions')
+            agentOpts.NoiseOptions.Variance = hyperparams.NoiseVariance;
+        else
+            agentOpts.ExplorationModel.Variance = hyperparams.NoiseVariance;
+        end
+    catch
+        % If MATLAB structure is strict, fallback to defaults
+    end
     
     % Combine the Pilot and the Judge into a single Agent
     agent = rlDDPGAgent(actor, critic, agentOpts);
