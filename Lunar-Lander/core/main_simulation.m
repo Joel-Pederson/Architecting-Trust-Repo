@@ -15,7 +15,7 @@ dt = params.dt;
 max_steps = params.max_steps;
 
 % THE MASTER SWITCH: 'DEAD_AI', 'MANUAL', or 'RL_AGENT'
-CONTROL_MODE = 'DEAD_AI'; 
+CONTROL_MODE = 'MANUAL'; 
 
 % If testing the RL agent, load the brain trained in Phase 5
 if strcmp(CONTROL_MODE, 'RL_AGENT')
@@ -31,7 +31,10 @@ u_prev = [0; 0];
 
 % --- 4. Telemetry Logging Arrays ---
 history_time   = zeros(1, max_steps);
+history_x      = zeros(1, max_steps);
 history_y      = zeros(1, max_steps);
+history_dy     = zeros(1, max_steps);
+history_theta  = zeros(1, max_steps);
 history_fuel   = zeros(1, max_steps);
 history_veto   = zeros(1, max_steps);
 history_thrust = zeros(1, max_steps);
@@ -95,7 +98,10 @@ for step = 1:max_steps
     IsDone = (x_next(2) <= 0);
     % E. Log Data for Post-Flight Telemetry
     history_time(step)   = current_time;
+    history_x(step)      = x_current(1);
     history_y(step)      = x_current(2);
+    history_dy(step)     = x_current(4);
+    history_theta(step)  = x_current(5);
     history_fuel(step)   = x_current(7);
     history_veto(step)   = VetoTriggered;
     history_thrust(step) = u_actual(1);
@@ -108,7 +114,10 @@ for step = 1:max_steps
     if IsDone
         % Trim the empty pre-allocated zeros from the logs
         history_time   = history_time(1:step);
+        history_x      = history_x(1:step);
         history_y      = history_y(1:step);
+        history_dy     = history_dy(1:step);
+        history_theta  = history_theta(1:step);
         history_fuel   = history_fuel(1:step);
         history_veto   = history_veto(1:step);
         history_thrust = history_thrust(1:step);
