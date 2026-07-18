@@ -14,11 +14,16 @@ function testReset(testCase)
     InitialObservation = reset(env);
     
     verifyEqual(testCase, length(InitialObservation), 8, 'Observation space should have 8 variables.');
-    verifyGreaterThan(testCase, InitialObservation(2), 14800, 'Initial altitude should be around 15000m (Apollo 11).');
-    verifyLessThan(testCase, InitialObservation(2), 15200, 'Initial altitude should be around 15000m (Apollo 11).');
     
-    verifyGreaterThan(testCase, InitialObservation(3), 1600, 'Initial horizontal velocity should be around 1700 m/s.');
-    verifyLessThan(testCase, InitialObservation(3), 1800, 'Initial horizontal velocity should be around 1700 m/s.');
+    % The observation is now scaled into [-1, 1] percentage bounds for the neural network.
+    % We must unscale it before verifying physical boundaries.
+    unscaled_y = InitialObservation(2) * 20000;
+    verifyGreaterThan(testCase, unscaled_y, 14800, 'Initial altitude should be around 15000m (Apollo 11).');
+    verifyLessThan(testCase, unscaled_y, 15200, 'Initial altitude should be around 15000m (Apollo 11).');
+    
+    unscaled_dx = InitialObservation(3) * 2000;
+    verifyGreaterThan(testCase, unscaled_dx, 1600, 'Initial horizontal velocity should be around 1700 m/s.');
+    verifyLessThan(testCase, unscaled_dx, 1800, 'Initial horizontal velocity should be around 1700 m/s.');
 end
 
 function testActionScalingAndIntegration(testCase)
