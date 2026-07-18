@@ -74,8 +74,8 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             this.u_prev = [0; 0];
             this.IsDone = false;
             
-            % Return initial observation to the AI
-            Observation = this.State;
+            % Return initial normalized observation to the AI
+            Observation = this.normalize_state(this.State);
             LoggedSignals = [];
         end
         
@@ -116,11 +116,28 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             % 5. UPDATE ENVIRONMENT
             this.IsDone = IsDone;
             this.u_prev = u_actual;
-            Observation = this.State;
+            Observation = this.normalize_state(this.State);
             LoggedSignals = [];
             
             % Notify the MATLAB environment that a step has occurred
             notifyEnvUpdated(this);
+        end
+    end
+    
+    methods (Access = private)
+        function norm_state = normalize_state(this, raw_state)
+            % NORMALIZE_STATE: Compresses true physics numbers into roughly [-1, 1] bounds
+            % so the Neural Network doesn't suffer from vanishing gradients.
+            norm_state = [
+                raw_state(1) / 500000;
+                raw_state(2) / 20000;
+                raw_state(3) / 2000;
+                raw_state(4) / 150;
+                raw_state(5) / pi;
+                raw_state(6) / pi;
+                raw_state(7) / 8200;
+                raw_state(8) / 300
+            ];
         end
     end
 end

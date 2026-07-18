@@ -11,12 +11,23 @@ function agent = build_ddpg_agent(obsInfo, actInfo, dt, hyperparams)
 %   agent       - Fully configured rlDDPGAgent object
 
     if nargin < 4
-        % Default hyperparameters if none are provided
-        hyperparams = struct();
-        hyperparams.ActorLR = 1e-4;
-        hyperparams.CriticLR = 1e-3;
-        hyperparams.Gamma = 0.99;
-        hyperparams.NoiseVariance = 0.3;
+        % Check if optimal hyperparameters have been generated and saved
+        currentFolder = fileparts(mfilename('fullpath'));
+        hyperparamFile = fullfile(currentFolder, '..', 'optimal_ddpg_hyperparams.mat');
+        
+        if isfile(hyperparamFile)
+            data = load(hyperparamFile);
+            hyperparams = data.optimal_hp;
+            disp('Loaded mathematically optimal hyperparameters from disk.');
+        else
+            % Fallback defaults if none are provided and no saved optimal file exists
+            hyperparams = struct();
+            hyperparams.ActorLR = 1e-4;
+            hyperparams.CriticLR = 1e-3;
+            hyperparams.Gamma = 0.99;
+            hyperparams.NoiseVariance = 0.3;
+            disp('Using fallback default hyperparameters.');
+        end
     end
 
     % --- 1. Build the Critic Network ---
