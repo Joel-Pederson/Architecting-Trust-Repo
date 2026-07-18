@@ -4,10 +4,9 @@ tests = functiontests(localfunctions);
 end
 function setupOnce(testCase)
 %SETUPONCE - Load shared test data used by all test cases
-% Dynamically add core and RL-training-harness to path
+% Dynamically add the entire repository (and all subfolders) to the MATLAB path
 scriptPath = fileparts(mfilename('fullpath'));
-addpath(fullfile(scriptPath, '..', 'core'));
-addpath(fullfile(scriptPath, '..', 'RL-training-harness'));
+addpath(genpath(fullfile(scriptPath, '..')));
 %
 % Input arguments:
 % testCase - matlab.unittest.TestCase used to store TestData
@@ -20,13 +19,13 @@ function testCatastrophicCrash(testCase)
 %
 % Scenario: lethal vertical impact should end episode and penalize heavily.
 % Scenario: Hits the ground (y=0) at a lethal 50 m/s
-x = [0; 0; 0; -50; 0; 0; 1000];
+x = [0; 0; 0; -50; 0; 0; 1000; 300];
 u_actual = [0; 0];
 u_prev = [0; 0];
 VetoTriggered = false;
 
 % Evaluate reward and done flag for the crash state
-[Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered, testCase.TestData.params);
+[Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTriggered, testCase.TestData.params);
 
 % Assert the simulation ended
 verifyTrue(testCase, IsDone, 'Simulation should terminate on ground contact.');
@@ -42,13 +41,13 @@ function testSoftLanding(testCase)
 %
 % Scenario: gentle touchdown gives large positive payout.
 % Scenario: Perfect touchdown (y=0) at a gentle 0.5 m/s
-x = [0; 0; 0; -0.5; 0; 0; 1000];
+x = [0; 0; 0; -0.5; 0; 0; 1000; 300];
 u_actual = [0; 0];
 u_prev = [0; 0];
 VetoTriggered = false;
 
 % Evaluate reward and done flag for the soft-landing state
-[Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered, testCase.TestData.params);
+[Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTriggered, testCase.TestData.params);
 
 % Assert the simulation ended
 verifyTrue(testCase, IsDone, 'Simulation should terminate on ground contact.');

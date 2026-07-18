@@ -1,4 +1,19 @@
-function [Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered, params)
+function [Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTriggered, params)
+% REWARD_DENSE_BASELINE Calculates the continuous reinforcement learning score.
+%
+% Reward Philosophy (Dense Baseline):
+%   - Dense Rewards (Calculated every step): 
+%       * Distance Penalty:   -0.1 * normalized distance from target
+%       * Tilt Penalty:       -0.1 * absolute pitch angle
+%       * Fuel Penalty:       -0.5 * normalized throttle squared
+%       * Smoothness Penalty: -0.1 * squared change in throttle
+%       * Beyond 80m Penalty: -0.1 * normalized distance outside the 80m safe box
+%
+%   - Sparse Rewards (Calculated at termination): 
+%       * Success:            +10,000 points (Soft touchdown)
+%       * Crash:              -50,000 points (Hard impact or excessive tilt)
+%       * Out of Bounds (OOB):-50,000 points (Flew outside the 500km x 20km flight box)
+
     % Unpack state variables
     x_pos = x(1);
     y_pos = x(2);
@@ -19,7 +34,7 @@ function [Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered,
     
     % --- 1. SPATIAL NORMALIZATION ---
     % Normalize coordinates against expected max boundaries so penalties stay fractional
-    norm_x = x_pos / 5000;
+    norm_x = x_pos / 500000;
     norm_y = y_pos / 15000;
     
     % --- 2. CONTINUOUS PENALTIES ---
@@ -44,7 +59,7 @@ function [Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered,
     % Penalize agent for being above 80 meters - creating a mathematical gravitational pull. 
     % The only way the AI can stop bleeding points is to descend into that 80-meter safe box and land.
     % Creates a gentle, mathematically stable pull toward the 80m box
-    beyond_x = max(0, abs(x_pos) - 80) / 5000;
+    beyond_x = max(0, abs(x_pos) - 80) / 500000;
     beyond_y = max(0, y_pos - 80) / 15000;
     beyond_bounds_penalty = -0.1 * (beyond_x + beyond_y);
     
@@ -69,9 +84,9 @@ function [Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered,
         else
             Reward = Reward + weights.success; % SUCCESS 
         end
-    % Ceiling set to 20,000m. Lateral boundaries expanded to 5,000m.
+    % Ceiling set to 20,000m. Lateral boundaries expanded to 500,000m to allow for orbital velocity braking.
     % Out-of-bounds terminal case (excess lateral/vertical displacement)
-    elseif abs(x_pos) > 5000 || y_pos > 20000
+    elseif abs(x_pos) > 500000 || y_pos > 20000
         IsDone = true;
         Reward = Reward + weights.oob; % OOB (Catastrophic penalty to prevent the Sideways Missile exploit)
     end

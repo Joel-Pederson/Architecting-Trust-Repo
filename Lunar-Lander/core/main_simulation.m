@@ -1,14 +1,14 @@
 % Lunar Lander Master Integration Loop - Test Bench 
 clear; clc;
 
-% Dynamically add the RL-training-harness folder to the path 
-% so main_simulation can access calculate_reward.m and get_reward_weights.m
+% Dynamically add the entire repository (and all subfolders) to the MATLAB path
 currentFolder = fileparts(mfilename('fullpath'));
-addpath(fullfile(currentFolder, '..', 'RL-training-harness'));
+repoRoot = fullfile(currentFolder, '..');
+addpath(genpath(repoRoot));
 
-% --- 1. Define System Parameters (Apollo 11 Specs) ---
+% --- 1. Load System Parameters (Apollo 11 Specs) ---
 % Pulls the physics limits from the central configuration file
-params = get_sim_params();
+params = get_sim_params(); % Initializes the lander state to match the historical Powered Descent Initiation (PDI)
 dt = params.dt; 
 
 % --- 2. Simulation Settings ---
@@ -19,13 +19,14 @@ CONTROL_MODE = 'MANUAL';
 
 % If testing the RL agent, load the brain trained in Phase 5
 if strcmp(CONTROL_MODE, 'RL_AGENT')
-    %load('trained_lunar_agent.mat', 'agent'); 
+    load('trained_lunar_agent.mat', 'agent'); 
 end
 
 % --- 3. Initial State ---
-% State Vector: [x, y, dx, dy, theta, dtheta, m_fuel]
-% Scenario: The LEM starting powered descent
-x_current = [0; 15000; 0; -20; 0; 0; 8200];
+% State Vector: [x, y, dx, dy, theta, dtheta, m_main_fuel, m_rcs_fuel]
+% Scenario: Powered Descent Initiation (PDI) from lunar orbit
+% Set Initial State: The exact state vector at Powered Descent Initiation (PDI)
+x_current = [0; 15000; 1700; 0; pi/2; 0; 8200; 300];
 u_prev = [0; 0];
 
 % --- 4. Telemetry Logging Arrays ---
@@ -70,10 +71,15 @@ for step = 1:max_steps
             % 1. Provide the agent with the observation state
             obs = get_ai_observation(x_current, params); 
             
-            % 2. Ask the agent for its requested action
-            % action_cell = getAction(agent, obs);
-            % u_nominal = cell2mat(action_cell); 
-            u_nominal = [0; 0]; % Placeholder until agent is trained
+            % 2. Ask the trained neural network for its raw requested action [-1, 1]
+            action_cell = getAction(agent, obs);
+            raw_action = cell2mat(action_cell); 
+            
+            % 3. Scale neural net output to physical hardware limits
+            u_thrust = (raw_action(1) + 1) / 2 * params.max_main_thrust;
+            u_torque = raw_action(2) * params.max_side_torque;
+            
+            u_nominal = [u_thrust; u_torque];
     end
     
     % B. The Action Governor (Safety Filter)
@@ -87,10 +93,9 @@ for step = 1:max_steps
     % Discrete Euler Integration to step physical time forward
     x_next = x_current + dxdt * dt;
     
-    % D. The Reward Trap
-    % Calculates how the AI performed (for future RL training)
-    [Reward, IsDone] = calculate_reward(x_next, u_actual, u_prev, VetoTriggered, params); 
-    
+    % D. Terminal Condition Check (Physics Boundary)
+    % The simulation ends if the spacecraft hits the ground
+    IsDone = (x_next(2) <= 0);
     % E. Log Data for Post-Flight Telemetry
     history_time(step)   = current_time;
     history_x(step)      = x_current(1);
@@ -147,11 +152,6 @@ title(sprintf('Main Engine Thrust - %s (Red dots = Sidecar Override)', CONTROL_M
 ylabel('Thrust (kN)');
 grid on; legend('location', 'best');
 
-ax2.YAxis.Exponent = 0;          % disable exponent/scientific notation
-yticks = get(ax2, 'YTick');      % get current tick values
-% Convert tick labels to plain numeric strings without exponent
-set(ax2, 'YTickLabel', arrayfun(@(v) num2str(v, '%.0f'), yticks, 'UniformOutput', false));
-
 % Plot 3: Fuel Depletion
 ax3 = subplot(3,1,3); 
 plot(history_time, history_fuel, 'g-', 'LineWidth', 2);
@@ -161,17 +161,6 @@ ylabel('Kilograms');
 grid on;
 
 linkaxes([ax1, ax2, ax3], 'x');
-
-% Enforce that when any axes x-limits change (e.g., via zoom),
-% the tick marks are kept consistent between subplots by listening to limit changes.
-hlisteners = [
-    addlistener(ax1, 'XLim', 'PostSet', @(~,~) set([ax2, ax3], 'XLim', get(ax1,'XLim')));
-    addlistener(ax2, 'XLim', 'PostSet', @(~,~) set([ax1, ax3], 'XLim', get(ax2,'XLim')));
-    addlistener(ax3, 'XLim', 'PostSet', @(~,~) set([ax1, ax2], 'XLim', get(ax3,'XLim')));
-];
-
-% Store listeners on the figure so they persist for the figure lifetime
-setappdata(fig, 'XAxisSyncListeners', hlisteners);
 
 % --- 7. AUTOMATED FILE SAVING ---
 % Get the absolute path of the directory where this script is located
@@ -190,9 +179,4 @@ end
 filename = fullfile(log_dir, sprintf('telemetry_%s.png', CONTROL_MODE));
 exportgraphics(fig, filename, 'Resolution', 300);
 
-fprintf('Telemetry saved successfully to: %s\n', filename);
-
-% --- 8. ANIMATED VISUALIZATION ---
-% Animate the lander using the recorded telemetry
-disp('Launching animated visualization...');
-animate_lunar_lander(history_time, history_x, history_y, history_dy, history_theta, history_thrust, history_fuel, history_veto, params);
+fprintf('Telemetry saved successfully to: %s\\n', filename);

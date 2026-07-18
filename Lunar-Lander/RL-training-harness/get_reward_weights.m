@@ -3,5 +3,5 @@ function weights = get_reward_weights()
     weights.crash = -50000;
     weights.success = 10000;
     weights.oob = -50000;
-    weights.sidecar_veto = -5;
+    weights.sidecar_veto = -50;
 end
