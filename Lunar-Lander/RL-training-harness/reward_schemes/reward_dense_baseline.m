@@ -1,4 +1,19 @@
-function [Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered, params)
+function [Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTriggered, params)
+% REWARD_DENSE_BASELINE Calculates the continuous reinforcement learning score.
+%
+% Reward Philosophy (Dense Baseline):
+%   - Dense Rewards (Calculated every step): 
+%       * Distance Penalty:   -0.1 * normalized distance from target
+%       * Tilt Penalty:       -0.1 * absolute pitch angle
+%       * Fuel Penalty:       -0.5 * normalized throttle squared
+%       * Smoothness Penalty: -0.1 * squared change in throttle
+%       * Beyond 80m Penalty: -0.1 * normalized distance outside the 80m safe box
+%
+%   - Sparse Rewards (Calculated at termination): 
+%       * Success:            +10,000 points (Soft touchdown)
+%       * Crash:              -50,000 points (Hard impact or excessive tilt)
+%       * Out of Bounds (OOB):-50,000 points (Flew outside the 500km x 20km flight box)
+
     % Unpack state variables
     x_pos = x(1);
     y_pos = x(2);

@@ -25,7 +25,7 @@ u_prev = [0; 0];
 VetoTriggered = false;
 
 % Evaluate reward and done flag for the crash state
-[Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered, testCase.TestData.params);
+[Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTriggered, testCase.TestData.params);
 
 % Assert the simulation ended
 verifyTrue(testCase, IsDone, 'Simulation should terminate on ground contact.');
@@ -47,7 +47,7 @@ u_prev = [0; 0];
 VetoTriggered = false;
 
 % Evaluate reward and done flag for the soft-landing state
-[Reward, IsDone] = calculate_reward(x, u_actual, u_prev, VetoTriggered, testCase.TestData.params);
+[Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTriggered, testCase.TestData.params);
 
 % Assert the simulation ended
 verifyTrue(testCase, IsDone, 'Simulation should terminate on ground contact.');

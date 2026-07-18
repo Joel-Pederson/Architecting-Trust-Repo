@@ -143,11 +143,6 @@ title(sprintf('Main Engine Thrust - %s (Red dots = Sidecar Override)', CONTROL_M
 ylabel('Thrust (kN)');
 grid on; legend('location', 'best');
 
-ax2.YAxis.Exponent = 0;          % disable exponent/scientific notation
-yticks = get(ax2, 'YTick');      % get current tick values
-% Convert tick labels to plain numeric strings without exponent
-set(ax2, 'YTickLabel', arrayfun(@(v) num2str(v, '%.0f'), yticks, 'UniformOutput', false));
-
 % Plot 3: Fuel Depletion
 ax3 = subplot(3,1,3); 
 plot(history_time, history_fuel, 'g-', 'LineWidth', 2);
@@ -157,17 +152,6 @@ ylabel('Kilograms');
 grid on;
 
 linkaxes([ax1, ax2, ax3], 'x');
-
-% Enforce that when any axes x-limits change (e.g., via zoom),
-% the tick marks are kept consistent between subplots by listening to limit changes.
-hlisteners = [
-    addlistener(ax1, 'XLim', 'PostSet', @(~,~) set([ax2, ax3], 'XLim', get(ax1,'XLim')));
-    addlistener(ax2, 'XLim', 'PostSet', @(~,~) set([ax1, ax3], 'XLim', get(ax2,'XLim')));
-    addlistener(ax3, 'XLim', 'PostSet', @(~,~) set([ax1, ax2], 'XLim', get(ax3,'XLim')));
-];
-
-% Store listeners on the figure so they persist for the figure lifetime
-setappdata(fig, 'XAxisSyncListeners', hlisteners);
 
 % --- 7. AUTOMATED FILE SAVING ---
 % Get the absolute path of the directory where this script is located
