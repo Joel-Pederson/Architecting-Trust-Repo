@@ -1,26 +1,35 @@
-% Lunar Lander Master Integration Loop - Test Bench 
-clear; clc;
+function main_simulation(CONTROL_MODE, agent_mat_file)
+% MAIN_SIMULATION Lunar Lander Master Integration Loop - Test Bench 
+%
+% Inputs:
+%   CONTROL_MODE   - String: 'MANUAL', 'DEAD_AI', or 'RL_AGENT' (Default: 'MANUAL')
+%   agent_mat_file - String: Path to the .mat file containing the trained agent (Default: 'trained_lunar_agent.mat')
 
-% Dynamically add the entire repository (and all subfolders) to the MATLAB path
-currentFolder = fileparts(mfilename('fullpath'));
-repoRoot = fullfile(currentFolder, '..');
-addpath(genpath(repoRoot));
+    if nargin < 1
+        CONTROL_MODE = 'MANUAL';
+    end
+    if nargin < 2
+        agent_mat_file = 'trained_lunar_agent.mat';
+    end
 
-% --- 1. Load System Parameters (Apollo 11 Specs) ---
-% Pulls the physics limits from the central configuration file
-params = get_sim_params(); % Initializes the lander state to match the historical Powered Descent Initiation (PDI)
-dt = params.dt; 
-
-% --- 2. Simulation Settings ---
-max_steps = params.max_steps;
-
-% THE MASTER SWITCH: 'DEAD_AI', 'MANUAL', or 'RL_AGENT'
-CONTROL_MODE = 'MANUAL'; 
-
-% If testing the RL agent, load the brain trained in Phase 5
-if strcmp(CONTROL_MODE, 'RL_AGENT')
-    load('trained_lunar_agent.mat', 'agent'); 
-end
+    % Dynamically add the entire repository (and all subfolders) to the MATLAB path
+    currentFolder = fileparts(mfilename('fullpath'));
+    repoRoot = fullfile(currentFolder, '..');
+    addpath(genpath(repoRoot));
+    
+    % --- 1. Load System Parameters (Apollo 11 Specs) ---
+    % Pulls the physics limits from the central configuration file
+    params = get_sim_params(); % Initializes the lander state to match the historical Powered Descent Initiation (PDI)
+    dt = params.dt; 
+    
+    % --- 2. Simulation Settings ---
+    max_steps = params.max_steps;
+    
+    % If testing the RL agent, load the specified brain
+    if strcmp(CONTROL_MODE, 'RL_AGENT')
+        fprintf('Loading Agent from: %s\n', agent_mat_file);
+        load(agent_mat_file, 'agent'); 
+    end
 
 % --- 3. Initial State ---
 % State Vector: [x, y, dx, dy, theta, dtheta, m_main_fuel, m_rcs_fuel]
@@ -180,3 +189,9 @@ filename = fullfile(log_dir, sprintf('telemetry_%s.png', CONTROL_MODE));
 exportgraphics(fig, filename, 'Resolution', 300);
 
 fprintf('Telemetry saved successfully to: %s\\n', filename);
+
+% --- 8. VIDEO VISUALIZATION ---
+disp('Launching Advanced Visualizer...');
+animate_lunar_lander(history_time, history_x, history_y, history_dy, history_theta, history_thrust, history_fuel, history_veto, params);
+
+end
