@@ -28,7 +28,6 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             if nargin < 1
                 rewardScheme = 'DenseBaseline';
             end
-            this.RewardScheme = rewardScheme;
             
             % 1. Define Observation Space (8 Variables)
             % [x; y; dx; dy; theta; dtheta; m_main_fuel; m_rcs_fuel]
@@ -41,8 +40,11 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             actInfo = rlNumericSpec([2 1], 'LowerLimit', [-1; -1], 'UpperLimit', [1; 1]);
             actInfo.Name = 'LanderThrustAndTorque';
             
-            % 3. Initialize the parent class
+            % 3. Initialize the superclass (MATLAB RL Environment)
             this = this@rl.env.MATLABEnvironment(obsInfo, actInfo);
+            
+            % Now that the object is fully constructed, assign properties
+            this.RewardScheme = rewardScheme;
             
             % 4. Load our modular configurations (Single Source of Truth)
             this.params = get_sim_params();
