@@ -20,34 +20,24 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
     % FIGURE 2: Main Dual-Cam & Dashboard Visualizer
     fig_main = figure('Name', 'Lunar Lander Advanced Visualizer', 'Position', [600, 100, 1000, 700]);
     
-    % Subplot 1: Global View (Rows 1-4, Column 1)
-    ax_global = subplot(6, 2, [1, 3, 5, 7]);
+    % Subplot 1: Global View (Rows 1-5, Column 1)
+    ax_global = subplot(7, 2, [1, 3, 5, 7, 9]);
     hold(ax_global, 'on');
     grid(ax_global, 'on');
     title(ax_global, 'Global Descent View', 'FontSize', 14);
     xlabel(ax_global, 'Horizontal Position (m)');
     ylabel(ax_global, 'Vertical Altitude (m)');
     
-    % Subplot 2: Tracking Camera (Rows 1-4, Column 2)
-    ax_track = subplot(6, 2, [2, 4, 6, 8]);
+    % Subplot 2: Tracking Camera (Rows 1-5, Column 2)
+    ax_track = subplot(7, 2, [2, 4, 6, 8, 10]);
     hold(ax_track, 'on');
     grid(ax_track, 'on');
     title(ax_track, 'Tracking Camera', 'FontSize', 14);
     xlabel(ax_track, 'Horizontal Position (m)');
     ylabel(ax_track, 'Vertical Altitude (m)');
     
-    % Subplot 3: Dummy Axis (Row 5, Column 1)
-    % This is critical: It forces MATLAB's auto-layout to be perfectly symmetric, 
-    % preventing the left plot from expanding downward and misaligning with the right plot.
-    ax_dummy = subplot(6, 2, 9);
-    axis(ax_dummy, 'off');
-    
-    % Subplot 4: Safety Veto Alarm (Row 5, Column 2)
-    ax_veto = subplot(6, 2, 10);
-    set(ax_veto, 'XTick', [], 'YTick', [], 'XColor', 'none', 'YColor', 'none', 'Color', 'none');
-    
     % Subplot 5: Systems Dashboard (Row 6, Columns 1 & 2)
-    ax_dash = subplot(6, 2, [11, 12]);
+    ax_dash = subplot(7, 2, [11, 12]);
     hold(ax_dash, 'on');
     grid(ax_dash, 'on');
     set(ax_dash, 'YColor', 'none', 'YTick', [], 'Layer', 'top'); % Hide Y axis, put grid on top of bars
@@ -109,8 +99,17 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
     % Telemetry HUD in Tracking Cam (Top Left)
     txt_telemetry = text(ax_track, 0.02, 0.95, '', 'Units', 'normalized', 'FontSize', 12, 'FontName', 'Helvetica Neue', 'BackgroundColor', 'w', 'EdgeColor', 'k', 'VerticalAlignment', 'top');
     
-    % Safety Veto Alarm (In its own mini subplot below tracking cam)
-    txt_veto = text(ax_veto, 0.5, 0.5, 'SAFETY OVERRIDE ACTIVE', 'Units', 'normalized', 'FontSize', 16, 'FontName', 'Helvetica Neue', 'FontWeight', 'bold', 'Color', 'w', 'BackgroundColor', 'r', 'EdgeColor', 'k', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', 'Visible', 'off');
+    % Subplot 6: Landing Status (Row 7, Column 1)
+    ax_status = subplot(7, 2, 13);
+    set(ax_status, 'XTick', [], 'YTick', [], 'XColor', 'none', 'YColor', 'none', 'Color', 'none');
+    text(ax_status, 0.65, 0.5, 'Landing Status: ', 'Units', 'normalized', 'FontSize', 16, 'FontWeight', 'bold', 'Color', 'k', 'HorizontalAlignment', 'right', 'VerticalAlignment', 'middle');
+    txt_status_val = text(ax_status, 0.66, 0.5, ' PENDING ', 'Units', 'normalized', 'FontSize', 16, 'FontWeight', 'bold', 'Color', 'k', 'BackgroundColor', 'y', 'EdgeColor', 'k', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'middle');
+    
+    % Subplot 7: Safety Veto Alarm (Row 7, Column 2)
+    ax_veto = subplot(7, 2, 14);
+    set(ax_veto, 'XTick', [], 'YTick', [], 'XColor', 'none', 'YColor', 'none', 'Color', 'none');
+    text(ax_veto, 0.65, 0.5, 'Safety Sidecar: ', 'Units', 'normalized', 'FontSize', 16, 'FontWeight', 'bold', 'Color', 'k', 'HorizontalAlignment', 'right', 'VerticalAlignment', 'middle');
+    txt_veto_val = text(ax_veto, 0.66, 0.5, ' INACTIVE ', 'Units', 'normalized', 'FontSize', 16, 'FontWeight', 'bold', 'Color', 'w', 'BackgroundColor', [0 0.8 0], 'EdgeColor', 'k', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'middle');
     
     % Set initial views
     axis(ax_track, 'equal');
@@ -138,6 +137,13 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
         curr_thrust = thrust(i);
         curr_fuel = fuel(i);
         is_veto = veto(i);
+        
+        % Dynamic dx calculation
+        if i > 1
+            curr_dx = (x(i) - x(i-1)) / (t(i) - t(i-1));
+        else
+            curr_dx = 0;
+        end
         
         % 1. Phase Space Update
         phase_trail.XData = dy(1:i);
@@ -168,10 +174,12 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
         
         % Flame Update & Safety Alarm
         if is_veto
-            txt_veto.Visible = 'on';
+            txt_veto_val.String = ' ACTIVE ';
+            txt_veto_val.BackgroundColor = [0.8 0 0]; % Red
             flame_color = [0 0.5 1]; 
         else
-            txt_veto.Visible = 'off';
+            txt_veto_val.String = ' INACTIVE ';
+            txt_veto_val.BackgroundColor = [0 0.8 0]; % Green
             flame_color = [1 0.5 0]; 
         end
         flame_patch_g.FaceColor = flame_color;
@@ -237,6 +245,25 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
             fuel_bar.FaceColor = 'y';
         else
             fuel_bar.FaceColor = 'g';
+        end
+        
+        % Update Landing Status Dynamically
+        if curr_y <= 2
+            % Apollo 11 strict landing tolerances
+            is_safe = (abs(curr_dy) <= 3) && (abs(curr_dx) <= 3) && (abs(curr_theta) <= 0.2);
+            if is_safe
+                txt_status_val.String = ' SAFE ';
+                txt_status_val.BackgroundColor = [0 0.8 0]; % Green
+                txt_status_val.Color = 'w';
+            else
+                txt_status_val.String = ' CRASH ';
+                txt_status_val.BackgroundColor = [0.8 0 0]; % Red
+                txt_status_val.Color = 'w';
+            end
+        else
+            txt_status_val.String = ' PENDING ';
+            txt_status_val.BackgroundColor = 'y'; % Yellow
+            txt_status_val.Color = 'k';
         end
         
         % Update Telemetry Text

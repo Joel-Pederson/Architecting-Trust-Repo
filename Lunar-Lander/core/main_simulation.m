@@ -2,11 +2,11 @@ function main_simulation(CONTROL_MODE, agent_mat_file)
 % MAIN_SIMULATION Lunar Lander Master Integration Loop - Test Bench 
 %
 % Inputs:
-%   CONTROL_MODE   - String: 'MANUAL', 'DEAD_AI', or 'RL_AGENT' (Default: 'MANUAL')
+%   CONTROL_MODE   - String: 'UNPOWERED_ORBIT', 'HARDCODED_PILOT', or 'RL_AGENT' (Default: 'HARDCODED_PILOT')
 %   agent_mat_file - String: Path to the .mat file containing the trained agent (Default: 'trained_lunar_agent.mat')
 
     if nargin < 1
-        CONTROL_MODE = 'MANUAL';
+        CONTROL_MODE = 'HARDCODED_PILOT';
     end
     if nargin < 2
         agent_mat_file = 'trained_lunar_agent.mat';
@@ -57,19 +57,60 @@ for step = 1:max_steps
     % A. The Primary AI (Nominal Control)
     % The control mode dictates the baseline behavior before the Safety Sidecar intercepts.
     switch CONTROL_MODE
-        case 'DEAD_AI'
-            % EXPECTED OUTCOME: Brute-force survival. 
-            % Simulates a complete primary flight computer failure. 
-            % Establishes the telemetry baseline to prove the Sidecar can 
-            % catch a fully loaded lander in freefall at the last possible millisecond.
+        case 'UNPOWERED_ORBIT'
+            % EXPECTED OUTCOME: Spacecraft remains in a super-orbital trajectory. 
+            % Proves the fidelity of the physics engine (centrifugal force cancels gravity).
             u_nominal = [0; 0];
             
-        case 'MANUAL'
-            % EXPECTED OUTCOME: Slower freefall, sidecar intervention.
-            % A basic hardcoded rule (firing 10% thrust). 
-            % Since 10% thrust (4,500 N) cannot overcome lunar gravity (~20,200 N),
-            % the lander will still fall, proving the Sidecar catches partial hardware failures.
-            u_nominal = [params.max_main_thrust * 0.1; 0];
+        case 'HARDCODED_PILOT'
+            % EXPECTED OUTCOME: Successful landing, but highly inefficient fuel usage.
+            % A fully functional PD-controller autopilot. It perfectly calculates thrust vectors 
+            % but relies on rigid math rather than Neural Network optimization.
+            
+            m_total = params.dry_mass + x_current(7) + x_current(8);
+            
+            % 1. Target Velocities
+            target_dx = 0; % Always aim to cancel horizontal velocity
+            
+            % Target descent rate based on altitude: v = -sqrt(2 * a * s)
+            % Fall moderately fast at high altitudes, slow down to -1 m/s near the ground
+            target_dy = -max(sqrt(2 * 0.3 * max(x_current(2), 0.1)), 1.0); 
+            
+            % 2. Velocity Errors
+            error_dx = target_dx - x_current(3);
+            error_dy = target_dy - x_current(4);
+            
+            % 3. Desired Thrust Vector
+            % Scale gains based on mass (F = m*a) to achieve ~0.5 to 1.0 m/s^2 correction per 1 m/s error
+            Kp_x = m_total * 0.8; 
+            Kp_y = m_total * 1.5; 
+            desired_thrust_x = error_dx * Kp_x;
+            desired_thrust_y = (error_dy * Kp_y) + (params.gravity * m_total); % Feed-forward gravity
+            
+            % 4. Target Attitude and Thrust Magnitude
+            T_mag = sqrt(desired_thrust_x^2 + desired_thrust_y^2);
+            theta_target = atan2(-desired_thrust_x, desired_thrust_y);
+            
+            % 5. Attitude Controller (PD)
+            error_theta = theta_target - x_current(5);
+            % Wrap angle to [-pi, pi]
+            error_theta = atan2(sin(error_theta), cos(error_theta)); 
+            
+            % Massively increase damping to prevent phase-space oscillations
+            Kp_theta = 50000;
+            Kd_theta = 100000;
+            u_torque = (error_theta * Kp_theta) - (x_current(6) * Kd_theta);
+            u_torque = max(min(u_torque, params.max_side_torque), -params.max_side_torque);
+            
+            % 6. Engine Controller
+            % Only fire the main engine if we are pointed within 15 degrees (~0.25 rad) of the target
+            if abs(error_theta) < 0.25
+                u_thrust = max(min(T_mag, params.max_main_thrust), 0);
+            else
+                u_thrust = 0; % Wait until rotation completes
+            end
+            
+            u_nominal = [u_thrust; u_torque];
             
         case 'RL_AGENT'
             % EXPECTED OUTCOME: Optimal, smooth landing.
