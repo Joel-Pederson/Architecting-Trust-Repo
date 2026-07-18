@@ -13,7 +13,7 @@ function agent = build_ddpg_agent(obsInfo, actInfo, dt, hyperparams)
     if nargin < 4
         % Check if optimal hyperparameters have been generated and saved
         currentFolder = fileparts(mfilename('fullpath'));
-        hyperparamFile = fullfile(currentFolder, '..', 'optimal_ddpg_hyperparams.mat');
+        hyperparamFile = fullfile(currentFolder, '..', 'tuning_results', 'optimal_ddpg_hyperparams.mat');
         
         if isfile(hyperparamFile)
             data = load(hyperparamFile);
