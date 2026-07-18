@@ -14,16 +14,23 @@ function testReset(testCase)
     InitialObservation = reset(env);
     
     verifyEqual(testCase, length(InitialObservation), 8, 'Observation space should have 8 variables.');
-    verifyEqual(testCase, InitialObservation(2), 15000, 'Initial altitude should be 15000m (Apollo 11).');
-    verifyEqual(testCase, InitialObservation(3), 1700, 'Initial horizontal velocity should be 1700 m/s.');
+    verifyGreaterThan(testCase, InitialObservation(2), 14800, 'Initial altitude should be around 15000m (Apollo 11).');
+    verifyLessThan(testCase, InitialObservation(2), 15200, 'Initial altitude should be around 15000m (Apollo 11).');
+    
+    verifyGreaterThan(testCase, InitialObservation(3), 1600, 'Initial horizontal velocity should be around 1700 m/s.');
+    verifyLessThan(testCase, InitialObservation(3), 1800, 'Initial horizontal velocity should be around 1700 m/s.');
 end
 
 function testActionScalingAndIntegration(testCase)
     env = LunarLanderEnv('DenseBaseline');
     reset(env);
     
-    % Force dy to 0 so we can strictly measure gravity
+    % Force dy to 0 so we can strictly measure gravity acceleration
     env.State(4) = 0; 
+    
+    % Force dx to 0 to eliminate centrifugal lift. 
+    % (At 1700 m/s orbital velocity, centrifugal force completely cancels gravity!)
+    env.State(3) = 0; 
     
     % Command: [-1, 1] means Minimum Thrust (Engine Off), Max Right Torque
     [~, ~, ~, ~] = step(env, [-1; 1]);

@@ -63,9 +63,8 @@ function agent = build_ddpg_agent(obsInfo, actInfo, dt)
     % Set the agent's clock to match our physics engine exactly
     agentOpts = rlDDPGAgentOptions('SampleTime', dt);
     
-    % Add some exploratory noise so the AI wiggles the joysticks to learn
-    agentOpts.ExplorationModel.Variance = 0.3; % 30% random wiggle
-    agentOpts.ExplorationModel.VarianceDecayRate = 1e-4; % Slowly turn off wiggle as it gets smarter
+    % Use default exploration noise model (Ornstein-Uhlenbeck)
+    % The default handles variance appropriately across all MATLAB versions
     
     % Combine the Pilot and the Judge into a single Agent
     agent = rlDDPGAgent(actor, critic, agentOpts);
