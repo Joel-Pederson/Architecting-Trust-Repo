@@ -15,7 +15,7 @@ end
 function testMidFlight(testCase)
     % Scenario: Mid flight, no crash or success
     x = [0; 5000; 0; 0; 0; 0; 0; 0];
-    [Reward, IsDone] = reward_sparse_only(x, [0;0], [0;0], false, testCase.TestData.params);
+    [Reward, IsDone] = reward_sparse_only(x, [0;0], [0;0], false, testCase.TestData.params, testCase.TestData.weights);
     
     verifyEqual(testCase, Reward, 0, 'Sparse reward should be exactly 0 during mid-flight.');
     verifyFalse(testCase, IsDone, 'Simulation should not be done mid-flight.');
@@ -24,7 +24,7 @@ end
 function testCrash(testCase)
     % Scenario: Hits ground too fast
     x = [0; 0; 0; -10; 0; 0; 0; 0];
-    [Reward, IsDone] = reward_sparse_only(x, [0;0], [0;0], false, testCase.TestData.params);
+    [Reward, IsDone] = reward_sparse_only(x, [0;0], [0;0], false, testCase.TestData.params, testCase.TestData.weights);
     
     verifyEqual(testCase, Reward, testCase.TestData.weights.crash, 'Should receive massive crash penalty.');
     verifyTrue(testCase, IsDone, 'Simulation should terminate on crash.');
@@ -33,7 +33,7 @@ end
 function testSuccess(testCase)
     % Scenario: Soft touchdown
     x = [0; 0; 0; -0.5; 0; 0; 0; 0];
-    [Reward, IsDone] = reward_sparse_only(x, [0;0], [0;0], false, testCase.TestData.params);
+    [Reward, IsDone] = reward_sparse_only(x, [0;0], [0;0], false, testCase.TestData.params, testCase.TestData.weights);
     
     verifyEqual(testCase, Reward, testCase.TestData.weights.success, 'Should receive massive success payout.');
     verifyTrue(testCase, IsDone, 'Simulation should terminate on landing.');

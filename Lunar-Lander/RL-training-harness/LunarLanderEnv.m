@@ -54,18 +54,50 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
         function [Observation, LoggedSignals] = reset(this)
             % RESET: Called automatically at the start of every new training episode
             
-            % RANDOMIZED initial conditions for robust AI training. This is
-            % a light amount of variation, potentially should increase
-            % variation in the future.
-            % randn() generates a normally distributed random number (bell curve)
-            init_x = randn() * 100;           % Start up to ~100m off-center
-            init_y = 15000 + (randn() * 50);  % Start around 15,000m (Historical Apollo 11 PDI altitude ~50,000 ft)
-            init_dx = 1700 + (randn() * 10);  % Start at historical orbital velocity (1,700 m/s)
-            init_dy = -10 + (randn() * 2);    % Start falling around -10 m/s
-            init_theta = randn() * 0.1;       % Start slightly tilted (up to ~5.7 deg). Mimics realistic mechanical wobble from detaching from the command module in orbit.
-            init_dtheta = randn() * 0.05;     % Start with a slight spin (up to ~2.8 deg/s). Forces the AI to learn to use side torque to stabilize immediately.
-            init_main_fuel = 8200;            % Always start with full main fuel (8200 kg). Ensures the AI has a consistent energy budget to solve the randomized physics puzzle.
-            init_rcs_fuel = 300;              % Always start with full RCS fuel (300 kg).
+            % Domain Randomization (Uniform Curriculum Learning)
+            % Due to use of heavily parallelized training (8 CPU cores), the workers 
+            % cannot sync a unified 'Episode Count' with each other. Instead, use 
+            % Domain Randomization: every single episode randomly picks a difficulty phase.
+            % This fills the Neural Network's Replay Buffer with a diverse mix of experiences
+            
+            phase_selector = rand();
+            
+            if phase_selector < 0.33
+                % Phase 1: Hover and Touchdown (Easy)
+                % Agent starts 50 meters off the ground with near-zero velocity.
+                % Teaches the AI fine throttle control and how to actually touch down.
+                init_x = randn() * 10;
+                init_y = 50 + (randn() * 5);
+                init_dx = randn() * 2;
+                init_dy = -2 + (randn() * 1);
+                init_theta = randn() * 0.05;
+                init_dtheta = randn() * 0.01;
+                
+            elseif phase_selector < 0.66
+                % Phase 2: Medium Descent (Medium)
+                % Agent starts 2,000 meters up falling at 20 m/s.
+                % Teaches the AI how to safely decelerate and manage fuel over medium distances.
+                init_x = randn() * 50;
+                init_y = 2000 + (randn() * 50);
+                init_dx = 50 + (randn() * 10);
+                init_dy = -20 + (randn() * 5);
+                init_theta = randn() * 0.1;
+                init_dtheta = randn() * 0.02;
+                
+            else
+                % Phase 3: Powered Descent Initiation (Hard)
+                % Agent starts in orbit at 15,000m going 1,700 m/s.
+                % Teaches the AI complex orbital mechanics and massive centrifugal forces.
+                init_x = randn() * 100;
+                init_y = 15000 + (randn() * 50);
+                init_dx = 1700 + (randn() * 10);
+                init_dy = -10 + (randn() * 2);
+                init_theta = randn() * 0.1;
+                init_dtheta = randn() * 0.05;
+            end
+            
+            init_main_fuel = 8200;            % Always start with full main fuel
+            init_rcs_fuel = 300;              % Always start with full RCS fuel
             
             % Set the internal state
             this.State = [init_x; init_y; init_dx; init_dy; init_theta; init_dtheta; init_main_fuel; init_rcs_fuel];
@@ -106,9 +138,9 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             % Determine how well the AI is doing by routing to the selected reward scheme
             switch this.RewardScheme
                 case 'DenseBaseline'
-                    [Reward, IsDone] = reward_dense_baseline(this.State, u_actual, this.u_prev, VetoTriggered, this.params);
+                    [Reward, IsDone] = reward_dense_baseline(this.State, u_actual, this.u_prev, VetoTriggered, this.params, this.weights);
                 case 'SparseOnly'
-                    [Reward, IsDone] = reward_sparse_only(this.State, u_actual, this.u_prev, VetoTriggered, this.params);
+                    [Reward, IsDone] = reward_sparse_only(this.State, u_actual, this.u_prev, VetoTriggered, this.params, this.weights);
                 otherwise
                     error('Unknown reward scheme selected: %s', this.RewardScheme);
             end

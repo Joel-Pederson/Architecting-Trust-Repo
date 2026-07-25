@@ -1,4 +1,4 @@
-function [Reward, IsDone] = reward_sparse_only(x, ~, ~, ~, ~)
+function [Reward, IsDone] = reward_sparse_only(x, ~, ~, ~, ~, weights)
 % REWARD_SPARSE_ONLY Calculates the reinforcement learning score using ONLY sparse rewards.
 %
 % Reward Philosophy (Sparse Only):
@@ -21,8 +21,7 @@ function [Reward, IsDone] = reward_sparse_only(x, ~, ~, ~, ~)
     IsDone = false;
     Reward = 0; % No dense rewards during flight!
     
-    % Load dynamic reward weights
-    weights = get_reward_weights();
+    % Weights passed in directly
     
     % --- TERMINAL CONDITIONS ---
     % Check ground contact and assess crash vs successful landing

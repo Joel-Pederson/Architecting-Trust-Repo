@@ -1,4 +1,4 @@
-function [Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTriggered, params)
+function [Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTriggered, params, weights)
 % REWARD_DENSE_BASELINE Calculates the continuous reinforcement learning score.
 %
 % Reward Philosophy (Dense Baseline):
@@ -29,8 +29,7 @@ function [Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTrigg
     max_T   = params.max_main_thrust;
     max_Tau = params.max_side_torque;
     
-    % Load dynamic reward weights
-    weights = get_reward_weights();
+    % Remove bottleneck: Weights are now passed in directly from the environment
     
     % --- 1. SPATIAL NORMALIZATION ---
     % Normalize coordinates against expected max boundaries so penalties stay fractional

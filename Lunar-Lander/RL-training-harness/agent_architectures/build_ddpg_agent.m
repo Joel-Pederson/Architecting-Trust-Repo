@@ -36,14 +36,14 @@ function agent = build_ddpg_agent(obsInfo, actInfo, dt, hyperparams)
     % Path 1: Process the State sensors
     statePath = [
         featureInputLayer(obsInfo.Dimension(1), 'Name', 'State')
-        fullyConnectedLayer(64, 'Name', 'CriticStateFC1')
+        fullyConnectedLayer(256, 'Name', 'CriticStateFC1')
         reluLayer('Name', 'CriticRelu1')
-        fullyConnectedLayer(64, 'Name', 'CriticStateFC2')];
+        fullyConnectedLayer(256, 'Name', 'CriticStateFC2')];
     
     % Path 2: Process the Action joysticks
     actionPath = [
         featureInputLayer(actInfo.Dimension(1), 'Name', 'Action')
-        fullyConnectedLayer(64, 'Name', 'CriticActionFC1')];
+        fullyConnectedLayer(256, 'Name', 'CriticActionFC1')];
     
     % Path 3: Merge them together to predict the final Score (Q-Value)
     commonPath = [
@@ -68,9 +68,9 @@ function agent = build_ddpg_agent(obsInfo, actInfo, dt, hyperparams)
     
     actorNet = [
         featureInputLayer(obsInfo.Dimension(1), 'Name', 'State')
-        fullyConnectedLayer(64, 'Name', 'ActorFC1')
+        fullyConnectedLayer(256, 'Name', 'ActorFC1')
         reluLayer('Name', 'ActorRelu1')
-        fullyConnectedLayer(64, 'Name', 'ActorFC2')
+        fullyConnectedLayer(256, 'Name', 'ActorFC2')
         reluLayer('Name', 'ActorRelu2')
         fullyConnectedLayer(actInfo.Dimension(1), 'Name', 'ActionOutput') % Outputs 2 numbers
         tanhLayer('Name', 'ActionTanh')]; % CRITICAL: Squashes outputs to exactly [-1, 1]
