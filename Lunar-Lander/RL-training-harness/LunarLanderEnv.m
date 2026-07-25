@@ -93,16 +93,16 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             
             u_nominal = [u_thrust; u_torque];
             
-            % 2. THE SAFETY SIDECAR
-            % Intercept the AI's command. If it's about to crash, veto it.
-            [u_actual, VetoTriggered, ~, ~] = safety_sidecar_filter(this.State, u_nominal, this.params);
+            % Bypass the safety sidecar during training so the AI learns from true physical consequences
+            u_actual = u_nominal;
+            VetoTriggered = false;
             
-            % 3. THE PHYSICS ENGINE
+            % 2. THE PHYSICS ENGINE
             % Calculate derivatives and move time forward by dt (Euler Integration)
             dxdt = lunar_lander_dynamics(this.State, u_actual, this.params);
             this.State = this.State + dxdt * this.params.dt;
             
-            % 4. THE REWARD CALCULATOR
+            % 3. THE REWARD CALCULATOR
             % Determine how well the AI is doing by routing to the selected reward scheme
             switch this.RewardScheme
                 case 'DenseBaseline'
@@ -113,7 +113,11 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
                     error('Unknown reward scheme selected: %s', this.RewardScheme);
             end
             
-            % 5. UPDATE ENVIRONMENT
+            % SCALE REWARD: Shrink the massive physical scores [-400000, 10000] 
+            % down to a mathematically stable [-40, 1] range for the neural network.
+            Reward = Reward / 10000;
+            
+            % 4. UPDATE ENVIRONMENT
             this.IsDone = IsDone;
             this.u_prev = u_actual;
             Observation = this.normalize_state(this.State);
