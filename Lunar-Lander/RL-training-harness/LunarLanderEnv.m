@@ -92,7 +92,7 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
                 init_y = 15000 + (randn() * 50);
                 init_dx = 1700 + (randn() * 10);
                 init_dy = -10 + (randn() * 2);
-                init_theta = randn() * 0.1;
+                init_theta = (pi/2) + (randn() * 0.1); % Starts at 90 deg horizontal retrograde (Apollo 11 PDI)
                 init_dtheta = randn() * 0.05;
             end
             
