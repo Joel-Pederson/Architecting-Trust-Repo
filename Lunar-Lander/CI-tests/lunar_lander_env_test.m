@@ -18,12 +18,16 @@ function testReset(testCase)
     % The observation is now scaled into [-1, 1] percentage bounds for the neural network.
     % We must unscale it before verifying physical boundaries.
     unscaled_y = InitialObservation(2) * 20000;
-    verifyGreaterThan(testCase, unscaled_y, 14800, 'Initial altitude should be around 15000m (Apollo 11).');
-    verifyLessThan(testCase, unscaled_y, 15200, 'Initial altitude should be around 15000m (Apollo 11).');
+    is_valid_alt = (unscaled_y > 30 && unscaled_y < 70) || ...
+                   (unscaled_y > 1800 && unscaled_y < 2200) || ...
+                   (unscaled_y > 14800 && unscaled_y < 15200);
+    verifyTrue(testCase, is_valid_alt, 'Initial altitude should match Phase 1 (~50m), Phase 2 (~2000m), or Phase 3 (~15000m).');
     
     unscaled_dx = InitialObservation(3) * 2000;
-    verifyGreaterThan(testCase, unscaled_dx, 1600, 'Initial horizontal velocity should be around 1700 m/s.');
-    verifyLessThan(testCase, unscaled_dx, 1800, 'Initial horizontal velocity should be around 1700 m/s.');
+    is_valid_vel = (abs(unscaled_dx) < 10) || ...
+                   (unscaled_dx > 30 && unscaled_dx < 70) || ...
+                   (unscaled_dx > 1600 && unscaled_dx < 1800);
+    verifyTrue(testCase, is_valid_vel, 'Initial horizontal velocity should match Curriculum phase (~0, ~50, or ~1700 m/s).');
 end
 
 function testActionScalingAndIntegration(testCase)

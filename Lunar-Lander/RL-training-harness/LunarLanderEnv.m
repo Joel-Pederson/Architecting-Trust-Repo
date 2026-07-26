@@ -131,8 +131,9 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             
             % 2. THE PHYSICS ENGINE
             % Calculate derivatives and move time forward by dt (Euler Integration)
-            dxdt = lunar_lander_dynamics(this.State, u_actual, this.params);
             this.State = this.State + dxdt * this.params.dt;
+            % Wrap angle theta to [-pi, pi] so it never accumulates indefinitely
+            this.State(5) = atan2(sin(this.State(5)), cos(this.State(5)));
             
             % 3. THE REWARD CALCULATOR
             % Determine how well the AI is doing by routing to the selected reward scheme
@@ -161,19 +162,10 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
     end
     
     methods (Access = private)
-        function norm_state = normalize_state(this, raw_state)
-            % NORMALIZE_STATE: Compresses true physics numbers into roughly [-1, 1] bounds
-            % so the Neural Network doesn't suffer from vanishing gradients.
-            norm_state = [
-                raw_state(1) / 500000;
-                raw_state(2) / 20000;
-                raw_state(3) / 2000;
-                raw_state(4) / 150;
-                raw_state(5) / pi;
-                raw_state(6) / pi;
-                raw_state(7) / 8200;
-                raw_state(8) / 300
-            ];
+        function norm_state = normalize_state(~, raw_state)
+            % NORMALIZE_STATE: Uses the central get_ai_observation function
+            % so training and deployment normalization are identical.
+            norm_state = get_ai_observation(raw_state);
         end
     end
 end

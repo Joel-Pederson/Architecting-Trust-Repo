@@ -1,15 +1,19 @@
-function main_simulation(CONTROL_MODE, agent_mat_file)
+function main_simulation(CONTROL_MODE, agent_mat_file, USE_SIDECAR)
 % MAIN_SIMULATION Lunar Lander Master Integration Loop - Test Bench 
 %
 % Inputs:
 %   CONTROL_MODE   - String: 'UNPOWERED_ORBIT', 'HARDCODED_PILOT', or 'RL_AGENT' (Default: 'HARDCODED_PILOT')
 %   agent_mat_file - String: Path to the .mat file containing the trained agent (Default: 'trained_lunar_agent.mat')
+%   USE_SIDECAR    - Boolean: Enable or disable Safety Sidecar override (Default: true)
 
     if nargin < 1
         CONTROL_MODE = 'HARDCODED_PILOT';
     end
     if nargin < 2
         agent_mat_file = 'trained_lunar_agent.mat';
+    end
+    if nargin < 3
+        USE_SIDECAR = true;
     end
 
     % Dynamically add the entire repository (and all subfolders) to the MATLAB path
@@ -133,8 +137,13 @@ for step = 1:max_steps
     end
     
     % B. The Action Governor (Safety Filter)
-    % Intercepts the AI's command and evaluates it against reality
-    [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x_current, u_nominal, params);
+    % Intercepts the AI's command and evaluates it against reality if enabled
+    if USE_SIDECAR
+        [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x_current, u_nominal, params);
+    else
+        u_actual = u_nominal;
+        VetoTriggered = false;
+    end
     
     % C. The Physics Engine (Environment Step)
     % Calculates continuous state derivatives using the final, filtered action
@@ -142,6 +151,8 @@ for step = 1:max_steps
     
     % Discrete Euler Integration to step physical time forward
     x_next = x_current + dxdt * dt;
+    % Wrap angle theta to [-pi, pi] so it never accumulates indefinitely
+    x_next(5) = atan2(sin(x_next(5)), cos(x_next(5)));
     
     % D. Terminal Condition Check (Physics Boundary)
     % The simulation ends if the spacecraft hits the ground
@@ -178,14 +189,22 @@ end
 
 % --- 6. TELEMETRY VISUALIZATION & LOGGING ---
 % Plot data
-fig = figure('Name', sprintf('Flight Telemetry: %s', CONTROL_MODE), 'Position', [100, 100, 1000, 800]);
+if USE_SIDECAR
+    mode_label = sprintf('%s (With Sidecar)', CONTROL_MODE);
+    file_label = sprintf('telemetry_%s_With_Sidecar.png', CONTROL_MODE);
+else
+    mode_label = sprintf('%s (Without Sidecar)', CONTROL_MODE);
+    file_label = sprintf('telemetry_%s_Without_Sidecar.png', CONTROL_MODE);
+end
+
+fig = figure('Name', sprintf('Flight Telemetry: %s', mode_label), 'Position', [100, 100, 1000, 800]);
 
 % Plot 1: Altitude over Time
 ax1 = subplot(3,1,1); 
 plot(history_time, history_y, 'b-', 'LineWidth', 2);
 hold on;
 yline(1.5, 'r--', 'Safety Buffer (1.5m)');
-title(sprintf('Lander Altitude - %s', CONTROL_MODE), 'Interpreter', 'none');
+title(sprintf('Lander Altitude - %s', mode_label), 'Interpreter', 'none');
 ylabel('Meters');
 grid on;
 
@@ -198,14 +217,14 @@ veto_indices = find(history_veto == 1);
 if ~isempty(veto_indices)
     plot(history_time(veto_indices), history_thrust(veto_indices) * 1e-3, 'r.','DisplayName', 'Sidecar Override');
 end
-title(sprintf('Main Engine Thrust - %s (Red dots = Sidecar Override)', CONTROL_MODE), 'Interpreter', 'none');
+title(sprintf('Main Engine Thrust - %s (Red dots = Sidecar Override)', mode_label), 'Interpreter', 'none');
 ylabel('Thrust (kN)');
 grid on; legend('location', 'best');
 
 % Plot 3: Fuel Depletion
 ax3 = subplot(3,1,3); 
 plot(history_time, history_fuel, 'g-', 'LineWidth', 2);
-title(sprintf('Fuel Mass Remaining - %s', CONTROL_MODE), 'Interpreter', 'none');
+title(sprintf('Fuel Mass Remaining - %s', mode_label), 'Interpreter', 'none');
 xlabel('Time (Seconds)');
 ylabel('Kilograms');
 grid on;
@@ -226,7 +245,7 @@ end
 
 % Generate a clean filename based on the mode and save it
 % Using exportgraphics for a clean, high-res image export
-filename = fullfile(log_dir, sprintf('telemetry_%s.png', CONTROL_MODE));
+filename = fullfile(log_dir, file_label);
 exportgraphics(fig, filename, 'Resolution', 300);
 
 fprintf('Telemetry saved successfully to: %s\\n', filename);
