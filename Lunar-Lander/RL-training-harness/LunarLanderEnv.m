@@ -92,7 +92,7 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
                 init_y = 15000 + (randn() * 50);
                 init_dx = 1700 + (randn() * 10);
                 init_dy = -10 + (randn() * 2);
-                init_theta = (pi/2) + (randn() * 0.1); % Starts at 90 deg horizontal retrograde (Apollo 11 PDI)
+                init_theta = randn() * 0.1;
                 init_dtheta = randn() * 0.05;
             end
             
@@ -131,6 +131,7 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             
             % 2. THE PHYSICS ENGINE
             % Calculate derivatives and move time forward by dt (Euler Integration)
+            dxdt = lunar_lander_dynamics(this.State, u_actual, this.params);
             this.State = this.State + dxdt * this.params.dt;
             % Wrap angle theta to [-pi, pi] so it never accumulates indefinitely
             this.State(5) = atan2(sin(this.State(5)), cos(this.State(5)));
