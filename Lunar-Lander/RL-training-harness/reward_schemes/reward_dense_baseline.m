@@ -20,6 +20,7 @@ function [Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTrigg
     dx = x(3);
     dy = x(4);
     theta = x(5);
+    dtheta = x(6);
     
     % Initialize flags
     IsDone = false;
@@ -40,8 +41,9 @@ function [Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTrigg
     % Distance penalty (Scaled to be max -0.1 per step)
     dist_penalty = -0.1 * sqrt(norm_x^2 + norm_y^2);
     
-    % Tilt penalty
+    % Tilt and Spin penalties
     tilt_penalty = -0.1 * abs(theta);
+    spin_penalty = -0.1 * abs(dtheta);
     
     % Thrust penalties (Normalized to max -0.5 per step)
     % This prevents the massive numeric difference between Newtons and Newton-meters 
@@ -63,7 +65,7 @@ function [Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTrigg
     beyond_bounds_penalty = -0.1 * (beyond_x + beyond_y);
     
     % Sum the continuous rewards
-    Reward = dist_penalty + tilt_penalty + fuel_penalty + smoothness_penalty + beyond_bounds_penalty;
+    Reward = dist_penalty + tilt_penalty + spin_penalty + fuel_penalty + smoothness_penalty + beyond_bounds_penalty;
     
     % --- 3. THE SIDECAR PENALTY ---
     % Reduced from -50 to -5. A long 80s burn now costs -20,000 points.

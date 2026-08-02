@@ -74,24 +74,24 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
                 init_dtheta = randn() * 0.01;
                 
             elseif phase_selector < 0.66
-                % Phase 2: Medium Descent (Medium)
-                % Agent starts 2,000 meters up falling at 20 m/s.
-                % Teaches the AI how to safely decelerate and manage fuel over medium distances.
+                % Phase 2: Glide Slope Approach (Medium)
+                % Agent starts 500 meters up falling at 10 m/s with 10 m/s drift.
+                % Teaches the AI how to arrest horizontal drift and align descent.
                 init_x = randn() * 50;
-                init_y = 2000 + (randn() * 50);
-                init_dx = 50 + (randn() * 10);
-                init_dy = -20 + (randn() * 5);
-                init_theta = randn() * 0.1;
+                init_y = 500 + (randn() * 20);
+                init_dx = 10 + (randn() * 2);
+                init_dy = -10 + (randn() * 2);
+                init_theta = randn() * 0.05;
                 init_dtheta = randn() * 0.02;
                 
             else
-                % Phase 3: Powered Descent Initiation (Hard)
-                % Agent starts in orbit at 15,000m going 1,700 m/s.
-                % Teaches the AI complex orbital mechanics and massive centrifugal forces.
+                % Phase 3: High Altitude Terminal Descent (Hard)
+                % Agent starts at 2,500m falling at 25 m/s with 20 m/s drift.
+                % Teaches full terminal descent without centrifugal gravity cancellation or ceiling exploits.
                 init_x = randn() * 100;
-                init_y = 15000 + (randn() * 50);
-                init_dx = 1700 + (randn() * 10);
-                init_dy = -10 + (randn() * 2);
+                init_y = 2500 + (randn() * 50);
+                init_dx = 20 + (randn() * 5);
+                init_dy = -25 + (randn() * 2);
                 init_theta = randn() * 0.1;
                 init_dtheta = randn() * 0.05;
             end

@@ -37,9 +37,9 @@ function main_simulation(CONTROL_MODE, agent_mat_file, USE_SIDECAR)
 
 % --- 3. Initial State ---
 % State Vector: [x, y, dx, dy, theta, dtheta, m_main_fuel, m_rcs_fuel]
-% Scenario: Powered Descent Initiation (PDI) from lunar orbit
-% Set Initial State: The exact state vector at Powered Descent Initiation (PDI)
-x_current = [0; 15000; 1700; 0; pi/2; 0; 8200; 300];
+% Scenario: High Altitude Terminal Descent (Final Approach)
+% Set Initial State: LEM at 2,500m altitude descending at -25 m/s with 20 m/s horizontal drift
+x_current = [0; 2500; 20; -25; 0; 0; 8200; 300];
 u_prev = [0; 0];
 
 % --- 4. Telemetry Logging Arrays ---
