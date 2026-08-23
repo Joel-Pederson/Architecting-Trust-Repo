@@ -1,18 +1,15 @@
-function [Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTriggered, params, weights)
+function [Reward, IsDone] = reward_dense_baseline(x, x_prev, u_actual, u_prev, VetoTriggered, params, weights)
 % REWARD_DENSE_BASELINE Calculates the continuous reinforcement learning score.
 %
 % Reward Philosophy (Dense Baseline):
 %   - Dense Rewards (Calculated every step): 
-%       * Distance Penalty:   -0.1 * normalized distance from target
-%       * Tilt Penalty:       -0.1 * absolute pitch angle
-%       * Fuel Penalty:       -0.5 * normalized throttle squared
-%       * Smoothness Penalty: -0.1 * squared change in throttle
-%       * Beyond 80m Penalty: -0.1 * normalized distance outside the 80m safe box
+%       * Potential-Based Shaping: Rewards the agent for getting closer to the pad, slowing down, and staying upright.
+%       * Fuel Penalty:       -0.3 for main engine, -0.03 for side engines.
 %
 %   - Sparse Rewards (Calculated at termination): 
-%       * Success:            +10,000 points (Soft touchdown)
-%       * Crash:              -50,000 points (Hard impact or excessive tilt)
-%       * Out of Bounds (OOB):-50,000 points (Flew outside the 500km x 20km flight box)
+%       * Success:            +100 points (Soft touchdown)
+%       * Crash:              -100 points (Hard impact or excessive tilt)
+%       * Out of Bounds (OOB):-100 points (Flew outside the flight box)
 
     % Unpack state variables
     x_pos = x(1);
@@ -36,36 +33,31 @@ function [Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTrigg
     % Normalize coordinates against expected max boundaries so penalties stay fractional
     norm_x = x_pos / 500000;
     norm_y = y_pos / 15000;
+    norm_dx = dx / 2000;
+    norm_dy = dy / 150;
     
-    % --- 2. CONTINUOUS PENALTIES ---
-    % Distance penalty (Scaled to be max -0.1 per step)
-    dist_penalty = -0.1 * sqrt(norm_x^2 + norm_y^2);
+    norm_x_prev = x_prev(1) / 500000;
+    norm_y_prev = x_prev(2) / 15000;
+    norm_dx_prev = x_prev(3) / 2000;
+    norm_dy_prev = x_prev(4) / 150;
+    theta_prev = x_prev(5);
     
-    % Tilt and Spin penalties
-    tilt_penalty = -0.1 * abs(theta);
-    spin_penalty = -0.1 * abs(dtheta);
+    % --- 2. POTENTIAL-BASED REWARD SHAPING (Gym Standard) ---
+    % Potential is high when the agent is close to the pad, moving slowly, and upright.
+    shaping_prev = -100 * sqrt(norm_x_prev^2 + norm_y_prev^2) - 100 * sqrt(norm_dx_prev^2 + norm_dy_prev^2) - 100 * abs(theta_prev);
+    shaping = -100 * sqrt(norm_x^2 + norm_y^2) - 100 * sqrt(norm_dx^2 + norm_dy^2) - 100 * abs(theta);
     
-    % Thrust penalties (Normalized to max -0.5 per step)
-    % This prevents the massive numeric difference between Newtons and Newton-meters 
-    % from skewing the AI's learning priorities.
+    % The reward is the difference in potential (guarantees a net +100 reward for descending successfully)
+    shaping_reward = shaping - shaping_prev;
+    
+    % --- 3. FUEL PENALTIES (Gym Standard) ---
     norm_T_main = u_actual(1) / max_T;
-    norm_T_side = u_actual(2) / max_Tau;
-    fuel_penalty = -0.5 * (norm_T_main^2 + norm_T_side^2); 
+    norm_T_side = abs(u_actual(2)) / max_Tau;
     
-    % Smoothness penalty normalized against the same bounds
-    norm_u_actual = [norm_T_main; norm_T_side];
-    norm_u_prev   = [u_prev(1) / max_T; u_prev(2) / max_Tau];
-    smoothness_penalty = -0.1 * sum((norm_u_actual - norm_u_prev).^2);
-    
-    % Penalize agent for being above 80 meters - creating a mathematical gravitational pull. 
-    % The only way the AI can stop bleeding points is to descend into that 80-meter safe box and land.
-    % Creates a gentle, mathematically stable pull toward the 80m box
-    beyond_x = max(0, abs(x_pos) - 80) / 500000;
-    beyond_y = max(0, y_pos - 80) / 15000;
-    beyond_bounds_penalty = -0.1 * (beyond_x + beyond_y);
+    fuel_penalty = -0.3 * norm_T_main - 0.03 * norm_T_side;
     
     % Sum the continuous rewards
-    Reward = dist_penalty + tilt_penalty + spin_penalty + fuel_penalty + smoothness_penalty + beyond_bounds_penalty;
+    Reward = shaping_reward + fuel_penalty;
     
     % --- 3. THE SIDECAR PENALTY ---
     % Reduced from -50 to -5. A long 80s burn now costs -20,000 points.
@@ -81,7 +73,17 @@ function [Reward, IsDone] = reward_dense_baseline(x, u_actual, u_prev, VetoTrigg
         IsDone = true;
         % Impact tolerances: mark crash if any exceed safe limits
         if abs(dy) > 1.0 || abs(dx) > 0.5 || abs(theta) > 0.1
-            Reward = Reward + weights.crash; % CRASH (Catastrophic penalty)
+            % Soft Crash Penalty: Penalize based on impact speed so the AI learns a gradient to slow down!
+            impact_speed = sqrt(dx^2 + dy^2);
+            crash_severity = min(1.0, impact_speed / 50.0); % Cap at 1.0 (50 m/s)
+            
+            % Base penalty on speed
+            Reward = Reward + (weights.crash * crash_severity); 
+            
+            % Additional flat penalty for landing sideways or spinning (forces upright landings)
+            if abs(theta) > 0.1 || abs(dtheta) > 0.1
+                Reward = Reward + (weights.crash * 0.5); 
+            end
         else
             Reward = Reward + weights.success; % SUCCESS 
         end

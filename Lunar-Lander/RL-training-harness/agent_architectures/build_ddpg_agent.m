@@ -93,8 +93,10 @@ function agent = build_ddpg_agent(obsInfo, actInfo, dt, hyperparams)
     try
         if isprop(agentOpts, 'NoiseOptions')
             agentOpts.NoiseOptions.Variance = hyperparams.NoiseVariance;
+            agentOpts.NoiseOptions.VarianceDecayRate = 1e-4; % Crucial for allowing the agent to stabilize
         else
             agentOpts.ExplorationModel.Variance = hyperparams.NoiseVariance;
+            agentOpts.ExplorationModel.VarianceDecayRate = 1e-4;
         end
     catch
         % If MATLAB structure is strict, fallback to defaults

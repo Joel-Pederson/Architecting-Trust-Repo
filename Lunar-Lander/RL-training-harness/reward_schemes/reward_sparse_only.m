@@ -1,4 +1,4 @@
-function [Reward, IsDone] = reward_sparse_only(x, ~, ~, ~, ~, weights)
+function [Reward, IsDone] = reward_sparse_only(x, x_prev, ~, ~, ~, weights)
 % REWARD_SPARSE_ONLY Calculates the reinforcement learning score using ONLY sparse rewards.
 %
 % Reward Philosophy (Sparse Only):

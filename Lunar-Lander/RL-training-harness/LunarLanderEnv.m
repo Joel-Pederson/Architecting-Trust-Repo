@@ -6,7 +6,8 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
         % Hardware Limits and Reward Weights
         params
         weights
-        State
+        State = zeros(8,1);
+        State_prev = zeros(8,1);
         
         % Configurable Reward Scheme
         RewardScheme
@@ -104,6 +105,7 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             
             % Reset historical tracking
             this.u_prev = [0; 0];
+            this.State_prev = this.State;
             this.IsDone = false;
             
             % Return initial normalized observation to the AI
@@ -131,6 +133,7 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             
             % 2. THE PHYSICS ENGINE
             % Calculate derivatives and move time forward by dt (Euler Integration)
+            this.State_prev = this.State;
             dxdt = lunar_lander_dynamics(this.State, u_actual, this.params);
             this.State = this.State + dxdt * this.params.dt;
             % Wrap angle theta to [-pi, pi] so it never accumulates indefinitely
@@ -140,16 +143,12 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             % Determine how well the AI is doing by routing to the selected reward scheme
             switch this.RewardScheme
                 case 'DenseBaseline'
-                    [Reward, IsDone] = reward_dense_baseline(this.State, u_actual, this.u_prev, VetoTriggered, this.params, this.weights);
+                    [Reward, IsDone] = reward_dense_baseline(this.State, this.State_prev, u_actual, this.u_prev, VetoTriggered, this.params, this.weights);
                 case 'SparseOnly'
-                    [Reward, IsDone] = reward_sparse_only(this.State, u_actual, this.u_prev, VetoTriggered, this.params, this.weights);
+                    [Reward, IsDone] = reward_sparse_only(this.State, this.State_prev, u_actual, this.u_prev, VetoTriggered, this.params, this.weights);
                 otherwise
                     error('Unknown reward scheme selected: %s', this.RewardScheme);
             end
-            
-            % SCALE REWARD: Shrink the massive physical scores [-400000, 10000] 
-            % down to a mathematically stable [-40, 1] range for the neural network.
-            Reward = Reward / 10000;
             
             % 4. UPDATE ENVIRONMENT
             this.IsDone = IsDone;
