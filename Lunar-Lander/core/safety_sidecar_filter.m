@@ -21,7 +21,7 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     dx      = x(3); % Horizontal velocity
     y_pos   = x(2); % Current altitude (meters)
     dy      = x(4); % Current vertical velocity (m/s). Negative means falling.
-    theta   = x(5); % Current pitch angle from vertical (radians)
+    theta   = atan2(sin(x(5)), cos(x(5))); % Current pitch angle strictly wrapped to [-pi, pi]
     dtheta  = x(6); % Current angular velocity (rad/s)
     m_main_fuel = x(7); % Current main fuel mass (kg)
     m_rcs_fuel  = x(8); % Current RCS propellant mass (kg)
@@ -43,8 +43,6 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     g_apparent = max(0, g - a_centrifugal); % Apparent gravity is reduced by orbital velocity
     
     % Initialize the output to assume the AI is safe, until proven otherwise.
-    u_actual = u_nominal;
-    VetoTriggered = false;
     u_actual = u_nominal;
     VetoTriggered = false;
     
@@ -199,6 +197,7 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     % Export the continuous barrier values (h). 
     % By feeding these values directly into the neural network's observation state, 
     % the AI is given "eyes" to mathematically see the invisible boundaries approaching.
-    h_alt  = y_pos - ((dy^2) / (2 * ((T_max / m_total) - g_apparent)));
+    a_max_upright = (T_max / m_total) - g_apparent;
+    h_alt  = y_pos - ((dy^2) / (2 * max(0.1, a_max_upright)));
     h_fuel = m_main_fuel - (fuel_needed_to_stop + safety_buffer_fuel);
 end

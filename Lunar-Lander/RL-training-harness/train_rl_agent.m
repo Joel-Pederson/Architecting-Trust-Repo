@@ -1,6 +1,6 @@
 function trainStats = train_rl_agent(agent_type, reward_scheme)
 % TRAIN_RL_AGENT Master orchestrator for Reinforcement Learning
-%
+%clc
 % Inputs:
 %   agent_type    - String specifying the type of agent to train (e.g., 'ddpg', 'ppo')
 %   reward_scheme - (Optional) String specifying the reward scheme (e.g., 'DenseBaseline', 'SparseOnly')
@@ -57,12 +57,12 @@ function trainStats = train_rl_agent(agent_type, reward_scheme)
     obs_data = experience.Observation.LunarLanderStates.Data;
     act_data = experience.Action.LanderThrustAndTorque.Data;
     
-    % Squeeze the 3D arrays into 1D vectors
-    x      = squeeze(obs_data(1,:,:));
-    y      = squeeze(obs_data(2,:,:));
-    dy     = squeeze(obs_data(4,:,:));
-    theta  = squeeze(obs_data(5,:,:));
-    fuel   = squeeze(obs_data(7,:,:));
+    % Squeeze the 3D arrays into 1D vectors and un-normalize them to physical units
+    x      = squeeze(obs_data(1,:,:)) * 500000;
+    y      = squeeze(obs_data(2,:,:)) * 20000;
+    dy     = squeeze(obs_data(4,:,:)) * 150;
+    theta  = squeeze(obs_data(5,:,:)) * pi;
+    fuel   = squeeze(obs_data(7,:,:)) * 8200;
     
     % Scale the AI's neural network [-1, 1] thrust output back into physical Newtons for the plot
     raw_thrust = squeeze(act_data(1,:,:));

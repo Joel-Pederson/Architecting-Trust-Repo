@@ -44,10 +44,11 @@ function [Reward, IsDone] = reward_dense_baseline(x, x_prev, u_actual, u_prev, V
     
     % --- 2. POTENTIAL-BASED REWARD SHAPING (Gym Standard) ---
     % Potential is high when the agent is close to the pad, moving slowly, and upright.
-    shaping_prev = -100 * sqrt(norm_x_prev^2 + norm_y_prev^2) - 100 * sqrt(norm_dx_prev^2 + norm_dy_prev^2) - 100 * abs(theta_prev);
-    shaping = -100 * sqrt(norm_x^2 + norm_y^2) - 100 * sqrt(norm_dx^2 + norm_dy^2) - 100 * abs(theta);
+    % Scaled by 10000 to ensure progress gradients (e.g. +0.3/step) overpower fuel penalties (-0.15/step)
+    shaping_prev = -10000 * sqrt(norm_x_prev^2 + norm_y_prev^2) - 10000 * sqrt(norm_dx_prev^2 + norm_dy_prev^2) - 10000 * abs(theta_prev);
+    shaping = -10000 * sqrt(norm_x^2 + norm_y^2) - 10000 * sqrt(norm_dx^2 + norm_dy^2) - 10000 * abs(theta);
     
-    % The reward is the difference in potential (guarantees a net +100 reward for descending successfully)
+    % The reward is the difference in potential
     shaping_reward = shaping - shaping_prev;
     
     % --- 3. FUEL PENALTIES (Gym Standard) ---

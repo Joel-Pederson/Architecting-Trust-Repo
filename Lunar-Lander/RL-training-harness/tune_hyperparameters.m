@@ -105,6 +105,7 @@ function negReward = training_objective(params)
     % 4. Configure Mini-Training Session
     trainOpts = get_training_options();
     % Override max episodes to 300 for statistically significant testing
+    % (Requires enough episodes for the agent to demonstrate learning capability)
     trainOpts.MaxEpisodes = 300; 
     % Disable UI plots so the screen doesn't get flooded, but enable console printing
     trainOpts.Plots = 'none';

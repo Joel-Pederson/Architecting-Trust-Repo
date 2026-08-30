@@ -3,17 +3,17 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
     % This class acts as the bridge between the physical simulation and the AI agent
 
     properties
-        % Hardware Limits and Reward Weights
-        params
-        weights
-        State = zeros(8,1);
-        State_prev = zeros(8,1);
+        % The current state and simulation parameters
+        State           (8,1) double
+        params          (1,1) struct
+        weights         (1,1) struct
         
-        % Configurable Reward Scheme
-        RewardScheme
+        % State history tracking for rewards and visualization
+        State_prev      (8,1) double
+        u_prev          (2,1) double
+        ConsecutiveVetos(1,1) double = 0
         
-        % Previous action (tracked to calculate smoothness penalties)
-        u_prev = [0; 0];
+        RewardScheme    char
     end
     
     properties (Access = protected)
@@ -30,9 +30,9 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
                 rewardScheme = 'DenseBaseline';
             end
             
-            % 1. Define Observation Space (8 Variables)
-            % [x; y; dx; dy; theta; dtheta; m_main_fuel; m_rcs_fuel]
-            obsInfo = rlNumericSpec([8 1]);
+            % 1. Define Observation Space (10 Variables)
+            % [x; y; dx; dy; theta; dtheta; m_main_fuel; m_rcs_fuel; h_alt; h_fuel]
+            obsInfo = rlNumericSpec([10 1]);
             obsInfo.Name = 'LunarLanderStates';
             
             % 2. Define Action Space (2 Variables)
@@ -106,6 +106,7 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             % Reset historical tracking
             this.u_prev = [0; 0];
             this.State_prev = this.State;
+            this.ConsecutiveVetos = 0;
             this.IsDone = false;
             
             % Return initial normalized observation to the AI
@@ -127,9 +128,16 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             
             u_nominal = [u_thrust; u_torque];
             
-            % Bypass the safety sidecar during training so the AI learns from true physical consequences
-            u_actual = u_nominal;
-            VetoTriggered = false;
+            % DEVELOPMENTAL GUARDIAN (Sidecar Filter is ON during training)
+            % Intercepts lethal neural network commands to save the spacecraft,
+            % keeping it alive long enough to learn how to land.
+            [u_actual, VetoTriggered, ~, ~] = safety_sidecar_filter(this.State, u_nominal, this.params);
+            
+            if VetoTriggered
+                this.ConsecutiveVetos = this.ConsecutiveVetos + 1;
+            else
+                this.ConsecutiveVetos = 0;
+            end
             
             % 2. THE PHYSICS ENGINE
             % Calculate derivatives and move time forward by dt (Euler Integration)
@@ -148,6 +156,14 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
                     [Reward, IsDone] = reward_sparse_only(this.State, this.State_prev, u_actual, this.u_prev, VetoTriggered, this.params, this.weights);
                 otherwise
                     error('Unknown reward scheme selected: %s', this.RewardScheme);
+            end
+            
+            % --- EARLY TERMINATION FIX ---
+            % Prevent the sidecar from hovering the lander indefinitely.
+            % If the sidecar is forced to take over for 1 second (50 steps), abort!
+            if this.ConsecutiveVetos >= 50
+                IsDone = true;
+                Reward = Reward + this.weights.crash; % Teach the AI that hovering on the sidecar is a crash
             end
             
             % 4. UPDATE ENVIRONMENT
