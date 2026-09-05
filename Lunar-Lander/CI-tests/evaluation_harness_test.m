@@ -19,19 +19,31 @@ function testRolloutRestoresExplorationSetting(testCase)
     % mean action rather than a sample. It MUST put the setting back: a caller that
     % evaluates mid-training and then continues would otherwise train a policy whose
     % exploration had been silently switched off, and nothing would report that.
+    %
+    % The setting is driven to each state EXPLICITLY rather than assuming the toolbox
+    % default. rlSACAgent ships UseExplorationPolicy true on some MATLAB releases and
+    % false on others, so asserting the default tested MathWorks rather than this repo:
+    % it passed on R2025a and failed on the CI runner's newer MATLAB. Restoring means
+    % returning the flag to whatever the caller had, so both directions are checked.
     p = testCase.TestData.params;
     env = LunarLanderEnv('DenseBaseline', 'on');
     env.CurriculumWeights = [1 0 0];
     agent = build_agent('sac', getObservationInfo(env), getActionInfo(env), p.agent_dt);
 
-    verifyTrue(testCase, agent.UseExplorationPolicy, ...
-        'Precondition failed: a fresh SAC agent should start with exploration on.');
+    assumeTrue(testCase, isprop(agent, 'UseExplorationPolicy'), ...
+        'This MATLAB release does not expose UseExplorationPolicy on rlSACAgent.');
 
-    rollout_episode(env, agent, 20);
+    for want = [true false]
+        agent.UseExplorationPolicy = want;
 
-    verifyTrue(testCase, agent.UseExplorationPolicy, ...
-        ['rollout_episode did not restore UseExplorationPolicy. Any caller that ' ...
-         'evaluates and then keeps training loses its exploration silently.']);
+        rollout_episode(env, agent, 20);
+
+        verifyEqual(testCase, agent.UseExplorationPolicy, want, ...
+            sprintf(['rollout_episode left UseExplorationPolicy at %d instead of ' ...
+                     'restoring it to %d. Any caller that evaluates and then keeps ' ...
+                     'training loses its exploration setting silently.'], ...
+                    agent.UseExplorationPolicy, want));
+    end
 end
 
 function testOutcomeRatesSumToOne(testCase)
