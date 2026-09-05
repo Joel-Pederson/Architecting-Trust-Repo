@@ -28,6 +28,11 @@ function results = run_fault_injection_study(opts)
 %   delay       - pilot acts on stale state. Included BECAUSE the sidecar handles it
 %                 badly: this is the architecture's boundary condition, not a win.
 %
+% The fault models themselves live in core/apply_sensor_fault.m so they can be unit
+% tested and reused; that file also carries 'alt_freeze', a harsher perception fault
+% where the altimeter stops updating below a threshold rather than reading a constant
+% offset.
+%
 % Inputs (optional struct):
 %   opts.n_episodes - episodes per cell (default 25)
 %   opts.phases     - curriculum phases to sweep (default 1:3)
@@ -90,7 +95,7 @@ function m = one_cell(p, phase, guardian, fault, mag, n, seed)
         hist = {};
         for i = 1:p.max_agent_steps
             s_true = env.State;
-            s_seen = corrupt(s_true, fault, mag, hist);
+            s_seen = apply_sensor_fault(s_true, fault, mag, hist);
             if strcmp(fault,'delay'), hist{end+1} = s_true; end %#ok<AGROW>
             u = scripted_pilot(s_seen, p);
             if strcmp(fault,'thrust_loss'), u(1) = u(1) * (1 - mag); end
@@ -136,21 +141,5 @@ function v = prctile_local(x, pct)
         v = x(lo);
     else
         v = x(lo) + (idx - lo) * (x(hi) - x(lo));
-    end
-end
-
-
-function s = corrupt(s_true, fault, mag, hist)
-    s = s_true;
-    switch fault
-        case 'alt_bias', s(2) = s_true(2) + mag;
-        case 'vel_bias', s(4) = s_true(4) * (1 - mag);
-        case 'delay'
-            if ~isempty(hist)
-                s = hist{max(1, numel(hist) - round(mag))};
-            end
-        case 'thrust_loss'   % applied to the command, not the state
-        otherwise
-            error('runFaultInjectionStudy:UnknownFault', 'Unknown fault: %s', fault);
     end
 end
