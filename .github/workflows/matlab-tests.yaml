@@ -6,7 +6,7 @@ on: [push, pull_request]
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    
+
     steps:
       # Step 1: Download your repository's code onto the GitHub server
       - name: Check out repository
@@ -21,8 +21,13 @@ jobs:
             Deep_Learning_Toolbox
             Parallel_Computing_Toolbox
 
-      # Step 3: Run all test scripts (With folder added to path and pwd unquoted)
+      # Step 3: Run all test scripts.
+      # Delegated to .github/scripts/run_ci_suite.m, which is equivalent to the previous
+      # inline runtests + assertSuccess but additionally republishes any failure as a
+      # GitHub `::error::` annotation. Job logs require repository admin rights to read,
+      # whereas annotations are public, so this is what makes a red run diagnosable from
+      # a clone or a fork.
       - name: Run Unit Tests
         uses: matlab-actions/run-command@v1
         with:
-          command: addpath(genpath(pwd)); results = runtests(pwd, 'IncludeSubfolders', true); assertSuccess(results);
+          command: addpath(fullfile(pwd, '.github', 'scripts')); run_ci_suite(pwd);
