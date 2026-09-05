@@ -1,108 +1,61 @@
 function agent = build_ddpg_agent(obsInfo, actInfo, dt, hyperparams)
 % BUILD_DDPG_AGENT Constructs a Deep Deterministic Policy Gradient Agent
 %
+% DDPG is the original continuous-control actor-critic. It is included in the trade study
+% as the baseline, not because it is expected to win: a single critic trained with a max
+% operator systematically overestimates Q-values, and DDPG is notoriously sensitive to
+% hyperparameters. build_td3_agent is the direct fix for that failure mode.
+%
 % Inputs:
 %   obsInfo     - Observation specification from the environment
 %   actInfo     - Action specification from the environment
-%   dt          - Simulation time step (for sample time)
+%   dt          - AGENT sample time (params.agent_dt = 0.1 s), NOT the physics step.
+%                 The environment holds each action across control_decimation substeps.
 %   hyperparams - (Optional) Struct containing tuning parameters
 %
 % Outputs:
 %   agent       - Fully configured rlDDPGAgent object
 
-    if nargin < 4
-        % Check if optimal hyperparameters have been generated and saved
-        currentFolder = fileparts(mfilename('fullpath'));
-        hyperparamFile = fullfile(currentFolder, '..', 'tuning_results', 'optimal_ddpg_hyperparams.mat');
-        
-        if isfile(hyperparamFile)
-            data = load(hyperparamFile);
-            hyperparams = data.optimal_hp;
-            disp('Loaded mathematically optimal hyperparameters from disk.');
-        else
-            % Fallback defaults if none are provided and no saved optimal file exists
-            hyperparams = struct();
-            hyperparams.ActorLR = 1e-4;
-            hyperparams.CriticLR = 1e-3;
-            hyperparams.Gamma = 0.99;
-            hyperparams.NoiseVariance = 0.3;
-            disp('Using fallback default hyperparameters.');
-        end
+    if nargin < 4 || isempty(hyperparams)
+        hyperparams = load_hyperparams('ddpg');
     end
 
-    % --- 1. Build the Critic Network ---
-    % The Critic takes two inputs (The State and The Action) and merges them
-    
-    % Path 1: Process the State sensors
-    statePath = [
-        featureInputLayer(obsInfo.Dimension(1), 'Name', 'State')
-        fullyConnectedLayer(256, 'Name', 'CriticStateFC1')
-        reluLayer('Name', 'CriticRelu1')
-        fullyConnectedLayer(256, 'Name', 'CriticStateFC2')];
-    
-    % Path 2: Process the Action joysticks
-    actionPath = [
-        featureInputLayer(actInfo.Dimension(1), 'Name', 'Action')
-        fullyConnectedLayer(256, 'Name', 'CriticActionFC1')];
-    
-    % Path 3: Merge them together to predict the final Score (Q-Value)
-    commonPath = [
-        additionLayer(2, 'Name', 'add') % Adds the State and Action math together
-        reluLayer('Name', 'CriticCommonRelu')
-        fullyConnectedLayer(1, 'Name', 'QValue')]; % Outputs a single number: Predicted Score
-    
-    % Assemble the Critic Network
-    criticNet = layerGraph();
-    criticNet = addLayers(criticNet, statePath);
-    criticNet = addLayers(criticNet, actionPath);
-    criticNet = addLayers(criticNet, commonPath);
-    criticNet = connectLayers(criticNet, 'CriticStateFC2', 'add/in1');
-    criticNet = connectLayers(criticNet, 'CriticActionFC1', 'add/in2');
-    
-    % Tell MATLAB this network represents a Q-Value Critic
-    critic = rlQValueRepresentation(criticNet, obsInfo, actInfo, ...
-        'Observation', {'State'}, 'Action', {'Action'});
-    
-    % --- 2. Build the Actor Network ---
-    % The Actor takes one input (The State) and outputs Actions
-    
-    actorNet = [
-        featureInputLayer(obsInfo.Dimension(1), 'Name', 'State')
-        fullyConnectedLayer(256, 'Name', 'ActorFC1')
-        reluLayer('Name', 'ActorRelu1')
-        fullyConnectedLayer(256, 'Name', 'ActorFC2')
-        reluLayer('Name', 'ActorRelu2')
-        fullyConnectedLayer(actInfo.Dimension(1), 'Name', 'ActionOutput') % Outputs 2 numbers
-        tanhLayer('Name', 'ActionTanh')]; % CRITICAL: Squashes outputs to exactly [-1, 1]
-    
-    % Tell MATLAB this network represents a Deterministic Actor
-    actor = rlDeterministicActorRepresentation(actorNet, obsInfo, actInfo, ...
-        'Observation', {'State'}, 'Action', {'ActionOutput'});
-    
-    % --- 3. Configure the DDPG Agent ---
-    
-    % Set the agent's clock to match our physics engine exactly
+    nets = build_shared_networks(obsInfo, actInfo);
+
+    % --- 1. Critic ---
+    critic = rlQValueFunction(nets.qCritic, obsInfo, actInfo, ...
+        'ObservationInputNames', 'State', 'ActionInputNames', 'Action');
+
+    % --- 2. Actor ---
+    actor = rlContinuousDeterministicActor(nets.detActor, obsInfo, actInfo);
+
+    % --- 3. Agent options ---
     agentOpts = rlDDPGAgentOptions('SampleTime', dt);
-    
-    % --- Inject Hyperparameters ---
+
     agentOpts.DiscountFactor = hyperparams.Gamma;
     agentOpts.ActorOptimizerOptions.LearnRate = hyperparams.ActorLR;
     agentOpts.CriticOptimizerOptions.LearnRate = hyperparams.CriticLR;
-    
-    % Try to inject Exploration Noise, depending on MATLAB version
-    try
-        if isprop(agentOpts, 'NoiseOptions')
-            agentOpts.NoiseOptions.Variance = hyperparams.NoiseVariance;
-            agentOpts.NoiseOptions.VarianceDecayRate = 1e-4; % Crucial for allowing the agent to stabilize
-        else
-            agentOpts.ExplorationModel.Variance = hyperparams.NoiseVariance;
-            agentOpts.ExplorationModel.VarianceDecayRate = 1e-4;
-        end
-    catch
-        % If MATLAB structure is strict, fallback to defaults
-    end
-    
-    % Combine the Pilot and the Judge into a single Agent
-    agent = rlDDPGAgent(actor, critic, agentOpts);
 
+    % Prevent exploding gradients
+    agentOpts.ActorOptimizerOptions.GradientThreshold = 1.0;
+    agentOpts.CriticOptimizerOptions.GradientThreshold = 1.0;
+
+    % --- REPLAY BUFFER ---
+    % MATLAB defaults to 10,000 transitions. Episodes here run to 3,000 agent steps, so
+    % the default held roughly three episodes: the agent was effectively learning
+    % on-policy from a sliding window and continuously forgetting every landing it had
+    % ever seen. Off-policy methods need orders of magnitude more.
+    agentOpts.ExperienceBufferLength = 1e6;
+    agentOpts.MiniBatchSize = 128;
+
+    % --- EXPLORATION NOISE ---
+    % VarianceDecayRate is applied PER STEP, not per episode. At 1e-4 with thousand-step
+    % episodes, variance fell to ~1e-4 of its initial value within about 30 episodes:
+    % exploration was dead long before there was anything worth exploiting. 1e-6 gives a
+    % half-life of roughly 1,000 episodes, matching the training budget.
+    agentOpts.NoiseOptions.StandardDeviation = sqrt(hyperparams.NoiseVariance);
+    agentOpts.NoiseOptions.StandardDeviationDecayRate = 1e-6;
+    agentOpts.NoiseOptions.StandardDeviationMin = 0.01;
+
+    agent = rlDDPGAgent(actor, critic, agentOpts);
 end

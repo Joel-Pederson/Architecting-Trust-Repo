@@ -14,8 +14,10 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
     
     phase_trail = plot(ax_phase, dy(1), y(1), 'm-', 'LineWidth', 2);
     phase_current = plot(ax_phase, dy(1), y(1), 'ko', 'MarkerFaceColor', 'y', 'MarkerSize', 8);
-    xlim(ax_phase, [min(min(dy), -50), max(max(dy), 10)]);
-    ylim(ax_phase, [0, max(15000, max(y)) + 1000]);
+    % Axes fit the actual flight envelope. Hard-coding a 15,000 m ceiling squashed every
+    % realistic descent profile into a sliver at the bottom of the plot.
+    xlim(ax_phase, [min(min(dy), -1) * 1.1, max(max(dy), 1) * 1.1]);
+    ylim(ax_phase, [0, max(y) * 1.1 + 1]);
     
     % FIGURE 2: Main Dual-Cam & Dashboard Visualizer
     fig_main = figure('Name', 'Lunar Lander Advanced Visualizer', 'Position', [600, 100, 1000, 700]);
@@ -114,11 +116,9 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
     % Set initial views
     axis(ax_track, 'equal');
     
-    % Scale Global View to fit the entire horizontal and vertical trajectory
-    min_x = min(0, min(x)) - 1000;
-    max_x = max(0, max(x)) + 1000;
-    min_y = min(-500, min(y)) - 500;
-    max_y = max(15000, max(y)) + 1000;
+    % Scale Global View to fit the entire trajectory. Logic lives in
+    % core/compute_view_limits.m so it can be regression-tested.
+    [min_x, max_x, min_y, max_y] = compute_view_limits(x, y);
     xlim(ax_global, [min_x, max_x]);
     ylim(ax_global, [min_y, max_y]);
     

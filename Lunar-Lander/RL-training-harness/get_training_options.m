@@ -1,31 +1,51 @@
-function trainOpts = get_training_options()
-% GET_TRAINING_OPTIONS Returns the hyperparameter configuration for RL training
+function trainOpts = get_training_options(agent_type, max_episodes)
+% GET_TRAINING_OPTIONS Returns the training configuration for a given architecture.
 %
-% This function centralizes the training options so they can be easily 
-% managed or replaced with Bayesian optimization configurations in the future.
+% Centralizes training options so they can be managed in one place or replaced with
+% Bayesian optimization configurations.
+%
+% The on-policy / off-policy distinction is not cosmetic. PPO discards its experience
+% after each update, so it must gather trajectories synchronously across workers; the
+% async 'Experiences' mode used for the off-policy agents feeds a shared replay buffer,
+% which PPO does not have. Sending it async experiences produces stale-gradient training
+% that silently underperforms rather than erroring.
+%
+% Inputs:
+%   agent_type   - (Optional) 'ddpg' | 'td3' | 'sac' | 'ppo'. Default 'ddpg'.
+%   max_episodes - (Optional) episode budget. Default 5000.
 %
 % Outputs:
 %   trainOpts - rlTrainingOptions object
 
-    trainOpts = rlTrainingOptions(...
-        'MaxEpisodes', 5000, ...               % Try to land 5,000 times (supporting Curriculum Learning)
-        'MaxStepsPerEpisode', 15000, ...       % Max 300 seconds per flight (15000 * 0.02s) to prevent wasting compute on drifting episodes
-        'StopTrainingCriteria', 'AverageReward', ... 
-        'StopTrainingValue', 400, ...         
-        'SaveAgentCriteria', 'EpisodeReward', ... % Save a backup if it has a great landing
-        'SaveAgentValue', 400, ...
-        'UseParallel', true, ...               % Distribute episodes across multiple CPU cores
-        'Plots', 'training-progress');         
-    
-    % Configure async parallel execution for maximum speed
-    trainOpts.ParallelizationOptions.Mode = 'async';
-    
-    % --- Apple Silicon Optimizations ---
-    % Because the M series chips use Unified Memory, sending massive gradient arrays between
-    % CPU workers can bottleneck the cache. It is much faster to have the workers
-    % calculate 'Experiences' (State, Action, Reward) and send those back to the
-    % main orchestrator thread in chunks of 64 or 128 steps to minimize thread locks.
-    trainOpts.ParallelizationOptions.DataToSendFromWorkers = 'Experiences';
-    trainOpts.ParallelizationOptions.StepsUntilDataIsSent = 128;
+    if nargin < 1 || isempty(agent_type),   agent_type = 'ddpg'; end
+    if nargin < 2 || isempty(max_episodes), max_episodes = 5000; end
 
+    params = get_sim_params();
+    on_policy = strcmpi(agent_type, 'ppo');
+
+    trainOpts = rlTrainingOptions(...
+        'MaxEpisodes', max_episodes, ...
+        'MaxStepsPerEpisode', params.max_agent_steps, ...   % 3000 decisions = 300 s at 10 Hz
+        'ScoreAveragingWindowLength', 50, ...               % Default of 5 is too noisy to read
+        'StopTrainingCriteria', 'AverageReward', ...
+        'StopTrainingValue', 6, ...
+        'SaveAgentCriteria', 'EpisodeReward', ...
+        'SaveAgentValue', 6, ...
+        'UseParallel', true, ...
+        'Plots', 'training-progress');
+
+    if on_policy
+        % PPO: workers must return complete, current trajectories.
+        trainOpts.ParallelizationOptions.Mode = 'sync';
+        trainOpts.ParallelizationOptions.DataToSendFromWorkers = 'Experiences';
+    else
+        % Off-policy: async workers stream experience into the shared replay buffer.
+        %
+        % Apple Silicon note - because M-series chips use unified memory, shipping large
+        % gradient arrays between workers thrashes the cache. Having workers compute
+        % experiences and return them in chunks minimizes thread locks.
+        trainOpts.ParallelizationOptions.Mode = 'async';
+        trainOpts.ParallelizationOptions.DataToSendFromWorkers = 'Experiences';
+        trainOpts.ParallelizationOptions.StepsUntilDataIsSent = 128;
+    end
 end

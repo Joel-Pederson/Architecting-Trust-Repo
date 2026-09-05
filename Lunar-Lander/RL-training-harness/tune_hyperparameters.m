@@ -19,8 +19,11 @@ function tune_hyperparameters()
     % Critic Learning Rate
     criticLR = optimizableVariable('CriticLR', [1e-4, 1e-2], 'Transform', 'log');
     
-    % Discount Factor (Gamma) - How much it cares about long-term survival
-    gamma = optimizableVariable('Gamma', [0.90, 0.999], 'Transform', 'none');
+    % Discount Factor (Gamma) - How much it cares about long-term survival.
+    % Searched near 1 because the agent runs at 10 Hz and descents last hundreds of
+    % seconds: gamma=0.99 is only a 10 second lookahead here, which cannot reach the
+    % touchdown reward at all. The lower bound is raised accordingly.
+    gamma = optimizableVariable('Gamma', [0.99, 0.9995], 'Transform', 'none');
     
     % Exploration Noise Variance - How randomly it pushes the joystick
     noiseVar = optimizableVariable('NoiseVariance', [0.1, 0.6], 'Transform', 'none');
@@ -60,6 +63,17 @@ function tune_hyperparameters()
     optimal_hp.CriticLR = bestParams.CriticLR;
     optimal_hp.Gamma = bestParams.Gamma;
     optimal_hp.NoiseVariance = bestParams.NoiseVariance;
+
+    % --- PROVENANCE STAMP ---
+    % Records the harness these values were tuned against so load_hyperparams can refuse
+    % them if the environment, reward, or control rate later changes. A discount factor
+    % is only meaningful relative to the sample time it was optimised at, and an unstamped
+    % file will happily override a corrected configuration while looking authoritative.
+    tuned_params = get_sim_params();
+    optimal_hp.tuned_for = struct( ...
+        'harness_version', tuned_params.harness_version, ...
+        'agent_dt',        tuned_params.agent_dt, ...
+        'tuned_on',        datetime('now'));
     
     save(savePath, 'optimal_hp');
     disp(['Optimal hyperparameters automatically saved to: ', savePath]);
@@ -99,14 +113,15 @@ function negReward = training_objective(params)
     hp.Gamma = params.Gamma;
     hp.NoiseVariance = params.NoiseVariance;
     
-    % 3. Build Agent with these specific hyperparameters
-    agent = build_ddpg_agent(obsInfo, actInfo, env.params.dt, hp);
-    
+    % 3. Build Agent with these specific hyperparameters.
+    % agent_dt (0.1 s), NOT params.dt - the environment holds each action across
+    % control_decimation physics substeps, and passing the physics step here would make
+    % every tuned gamma mean something 5x shorter than intended.
+    agent = build_agent('ddpg', obsInfo, actInfo, env.params.agent_dt, hp);
+
     % 4. Configure Mini-Training Session
-    trainOpts = get_training_options();
-    % Override max episodes to 300 for statistically significant testing
-    % (Requires enough episodes for the agent to demonstrate learning capability)
-    trainOpts.MaxEpisodes = 300; 
+    % 300 episodes is enough to demonstrate learning capability
+    trainOpts = get_training_options('ddpg', 300);
     % Disable UI plots so the screen doesn't get flooded, but enable console printing
     trainOpts.Plots = 'none';
     trainOpts.Verbose = true;

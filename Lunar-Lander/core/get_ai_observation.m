@@ -31,7 +31,11 @@ function norm_state = get_ai_observation(raw_state, params)
     
     % Altitude Barrier (h_alt)
     a_max_upright = (params.max_main_thrust / m_total) - g_apparent;
-    h_alt = y_pos - ((dy^2) / (2 * max(0.1, a_max_upright)));
+    if dy < 0
+        h_alt = y_pos - ((dy^2) / (2 * max(0.1, a_max_upright)));
+    else
+        h_alt = y_pos; % No braking distance required if flying upwards
+    end
     
     % Fuel Barrier (h_fuel)
     hover_time_reserve = 3.0;
@@ -49,15 +53,15 @@ function norm_state = get_ai_observation(raw_state, params)
     h_fuel = m_main_fuel - (fuel_needed_to_stop + safety_buffer_fuel);
 
     norm_state = [
-        raw_state(1) / 500000;
-        raw_state(2) / 20000;
-        raw_state(3) / 2000;
-        raw_state(4) / 150;
+        raw_state(1) / 1000;    % Max expected horizontal drift
+        raw_state(2) / 3000;    % Max expected altitude
+        raw_state(3) / 100;     % Max expected horizontal velocity
+        raw_state(4) / 100;     % Max expected vertical velocity
         wrapped_theta / pi;
         raw_state(6) / pi;
         raw_state(7) / 8200;
         raw_state(8) / 300;
-        h_alt / 15000;  % Normalize h_alt against typical max altitude
-        h_fuel / 8200   % Normalize h_fuel against max fuel
+        h_alt / 3000;           % Normalize h_alt against max altitude
+        h_fuel / 8200           % Normalize h_fuel against max fuel
     ];
 end
