@@ -118,15 +118,17 @@ function ep = run_scenario(p, sc)
     agent = [];
     switch sc.kind
         case 'agent', agent = load_agent('cloned_agent_4phase.mat');
-        case 'ddpg',  agent = load_agent('trade_agent_ddpg_gamma995_saturated.mat');
+        case 'ddpg',  agent = load_agent('trade_agent_ddpg_gamma995_saturated.mat', ...
+                                          'trade_agent_ddpg.mat');
     end
     if ~strcmp(sc.kind, 'pilot') && isempty(agent)
         ep = []; return;
     end
 
-    % Scenarios that illustrate a policy's TYPICAL behaviour retry past an unlucky draw;
-    % the cloned agent lands ~80% of the time, and a stalled sample would misrepresent
-    % "healthy nominal". Scenarios 2 and 3 never retry - their whole value is that they
+    % Scenarios that illustrate a policy's TYPICAL behaviour retry past an unlucky draw,
+    % so that a stalled sample does not misrepresent "healthy nominal". The measured agent
+    % lands on the first attempt, so this is insurance against a retrained one rather than
+    % something that fires. Scenarios 2 and 3 never retry - their whole value is that they
     % share one initial condition.
     max_attempts = 1;
     if isfield(sc, 'find_landing') && sc.find_landing
@@ -186,10 +188,20 @@ function ep = fly_episode(env, p, sc, agent)
 end
 
 
-function agent = load_agent(fname)
+function agent = load_agent(varargin)
+% Takes candidate filenames in preference order and loads the first that exists.
+%
+% Scenario 4 originally named only a hand-saved gamma-sweep artefact, which
+% run_algorithm_trade does not write - so on a fresh clone the scenario silently skipped
+% and the negative result never appeared. Falling through to the name the trade study
+% actually produces makes the reel reproducible.
     here = fileparts(mfilename('fullpath'));
-    f = fullfile(here, fname);
-    if ~isfile(f), agent = []; return; end
+    f = '';
+    for k = 1:numel(varargin)
+        candidate = fullfile(here, varargin{k});
+        if isfile(candidate), f = candidate; break; end
+    end
+    if isempty(f), agent = []; return; end
     d = load(f, 'agent');
     agent = d.agent;
     if isprop(agent, 'UseExplorationPolicy')

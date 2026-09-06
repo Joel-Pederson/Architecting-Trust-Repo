@@ -3,43 +3,60 @@
 A MATLAB testbed for the **Safety Sidecar** architecture described in *Architecting Trust:
 A Modular Framework for the Operational Deployment of Autonomous Systems*.
 
-The paper argues that an autonomous system can be trusted operationally without trusting
-its decision-making component, by wrapping it in a small, verifiable runtime barrier that
-holds regardless of what the inner controller does. This repository is the concrete
-demonstration: a full Apollo-class powered descent, flown by a neural policy, with a
-formally simple barrier watching over it — and a fault-injection study showing what the
-barrier is worth when the controller is wrong.
+A neural policy flies a full Apollo-class powered descent — 15.2 km, 1697 m/s, 550 km of
+downrange — wrapped in a small runtime barrier that holds regardless of what the policy
+does. A fault-injection study shows what the barrier is worth when the controller is wrong.
+
+**This README is a walkthrough for someone who has just cloned the repo.** Results and the
+reasoning behind the design are further down, after the instructions.
 
 ---
 
-## The claim, and what evidence lives where
+## Shortest path to seeing it work
 
-The architecture makes two claims that need **opposite** evidence, so there are two
-experiments rather than one.
+```matlab
+cd Lunar-Lander
+addpath(genpath(pwd))
+demo_sidecar_rescue          % needs no trained network — this is the paper's core result
+```
 
-| Claim | Means | Script |
-|---|---|---|
-| **Non-intrusiveness** — a barrier must not degrade a competent controller | Identical landing rates with the sidecar attached and detached | `evaluate_final_agent` |
-| **Necessity** — a barrier must save a controller that is wrong | Same controller, same scenario, corrupted sensor; barrier on vs off | `demo_sidecar_rescue`, `demo_agent_rescue`, `run_fault_injection_study` |
+Two flights, one crash, one landing, difference is the barrier. Nothing to train.
 
-A healthy agent cannot demonstrate necessity — it never approaches the barrier, so nothing
-happens. A faulty one cannot demonstrate non-intrusiveness. Both halves are needed.
+Everything involving the **neural agent** needs about two hours of training first, because
+all `.mat` files are gitignored. That is [step 4](#4-train-the-networks--2-hours).
 
 ---
 
 ## Requirements
 
-- **MATLAB R2025a** (earlier releases have a different `trainFromData` / `rlReplayMemory`
-  contract and are untested here)
-- Reinforcement Learning Toolbox
-- Deep Learning Toolbox
-- Parallel Computing Toolbox (optional; used only by the training sweeps)
+| | |
+|---|---|
+| MATLAB | **R2025a**. Earlier releases have a different `trainFromData` / `rlReplayMemory` contract and are untested. |
+| Toolboxes | Reinforcement Learning, Deep Learning. Parallel Computing is optional (training sweeps only). |
+| Hardware | No GPU needed. Everything below was measured on Apple silicon, single process. |
+| Disk | ~150 MB for the generated datasets and agents (`dagger_corpus.mat` is the big one at ~50 MB). |
 
-No GPU is required. Everything below was measured on Apple silicon in a single process.
+Check what you have:
+
+```matlab
+ver          % look for Reinforcement Learning Toolbox and Deep Learning Toolbox
+```
+
+If a toolbox is missing, steps 1–3 still work — they use no learning at all. Only step 4
+onward needs them.
 
 ---
 
-## Quick start
+## The walkthrough
+
+### 1. Clone and open
+
+```bash
+git clone git@github.com:Joel-Pederson/Architecting-Trust-Repo.git
+cd Architecting-Trust-Repo
+```
+
+Then, in MATLAB:
 
 ```matlab
 cd Lunar-Lander
@@ -47,164 +64,245 @@ addpath(genpath(pwd))
 ```
 
 Every entry point calls `addpath(genpath(...))` on itself, so running one directly from a
-fresh MATLAB session also works.
+fresh session also works. The `addpath` above just saves repeating it.
 
-### 1. Check the install — 90 tests, no training required
+### 2. Verify the install — 90 tests, no training required
 
 ```matlab
 runtests('CI-tests', 'IncludeSubfolders', true)
 ```
 
-This is the same suite CI runs. It exercises the physics, the reward landscape, the
-barrier, the action interface, the fault models, the animator and the imitation pipeline.
-It needs no trained network and takes a couple of minutes.
+Expect **90 passed, 0 failed** in about 95 seconds. This is the same suite CI runs. It
+exercises the physics, the reward landscape, the barrier, the action interface, the fault
+models, the animator and the imitation pipeline — none of which need a trained network.
 
-### 2. See the barrier work — still no training required
+To run one file while working on it:
 
 ```matlab
-demo_sidecar_rescue        % 10 m altimeter bias on the CLASSICAL pilot
+runtests('CI-tests/safety_sidecar_test.m')
 ```
 
-Two flights, identical initial condition, identical controller. The pilot's altimeter
-reads 10 m high, so it believes it has more room than it does and brakes late. It cannot
-detect this: every sensor it has is self-consistent. The sidecar reads **true** state —
-that split is the paper's Perception Gatekeeper boundary — and enforces one thing only:
+### 3. See the barrier work — still no training required
+
+```matlab
+demo_sidecar_rescue          % 10 m altimeter bias on the CLASSICAL pilot
+```
+
+```
+=== SAFETY SIDECAR RESCUE DEMO ===
+Fault: altimeter reads 10 m HIGH. The pilot cannot detect this.
+Identical scenario and controller in both runs; only the barrier differs.
+
+  guardian OFF : crashed   impact   1.39 m/s  (dy  -1.39, dx  +0.06)  vetoes 0
+  guardian ON  : landed    impact   0.47 m/s  (dy  -0.46, dx  +0.05)  vetoes 153
+
+Touchdown limits: |dy| <= 1.0 m/s, |dx| <= 0.5 m/s, |theta| <= 0.10 rad
+```
+
+Two animation windows open, one per run. Same initial condition, same controller; the
+pilot's altimeter reads 10 m high so it brakes late. It cannot detect this — every sensor
+it has is self-consistent. The sidecar reads **true** state (the paper's Perception
+Gatekeeper boundary) and enforces one thing:
 
 ```
 h_alt = y − dy² / (2·a_max)     % altitude minus the distance needed to stop at full thrust
 ```
 
-Guardian off: crash. Guardian on: landing. **This is the paper's core result and it
-involves no machine learning at all.**
-
-### 3. Everything past this point needs a trained network
-
-`.mat` files are gitignored (see `.gitignore`), so a fresh clone has **no** agent and **no**
-demonstration dataset. `run_trained_agent`, `demo_agent_rescue` and `demo_reel` will raise
-an informative error until you build one. That is the next section.
-
----
-
-## Training from a fresh clone
-
-One command rebuilds everything:
+Variations:
 
 ```matlab
-train_pipeline          % ~2 hours end to end
+demo_sidecar_rescue(20)          % harsher fault
+demo_sidecar_rescue(10, false)   % numbers only, no animation windows
 ```
 
-It runs four stages, each of which writes an artefact to `Lunar-Lander/` and can be resumed
-independently with `train_pipeline(struct('stages', 3:4))`.
+**This is the core result and it involves no machine learning at all.** If you only run one
+thing, run this.
 
-| # | Stage | Produces | ~Time |
+### 4. Train the networks — ~2 hours
+
+Everything past this point needs a trained agent. `.mat` files are gitignored (see
+[.gitignore](.gitignore)), so a fresh clone has **no** agent and **no** demonstration
+dataset. `run_trained_agent`, `evaluate_final_agent` and `demo_agent_rescue` raise a
+`:NoAgent` error naming this step until you do it; `demo_reel` skips the scenarios it
+cannot fly and plays the rest.
+
+```matlab
+train_pipeline
+```
+
+Four stages, each writing an artefact into `Lunar-Lander/`:
+
+| # | Stage | Writes | ~Time |
 |---|---|---|---|
 | 1 | **Demonstrate** — fly the classical guidance law, record every (state, action) pair | `demonstrations.mat` | 20 min |
 | 2 | **Clone** — fit 8 TD3 actors by regression, keep the one that flies best | `cloned_agent_4phase.mat` | 20 min |
 | 3 | **DAgger** — roll out the clone, label the states *it* visits with expert actions | `dagger_corpus.mat` | 60 min |
-| 4 | **Select** — re-clone from the aggregated corpus, screen wide then verify a shortlist | `cloned_agent_4phase.mat` | 15 min |
+| 4 | **Select** — re-clone from the corpus, screen wide then verify a shortlist | `cloned_agent_4phase.mat` | 15 min |
 
-Then verify and watch:
+It prints a running table and is safe to leave unattended. Stage 3 dominates because each
+round flies complete powered descents (~8,900 steps each).
+
+**Resuming.** Stages are independent as long as their input artefact exists:
 
 ```matlab
-evaluate_final_agent                % the headline table, 30 episodes per cell
-run_trained_agent('orbit')          % animate a full powered descent
+train_pipeline(struct('stages', 3:4))     % keep the dataset and seed clone, redo DAgger
+train_pipeline(struct('stages', 4))       % just re-select from an existing corpus
 ```
 
-### Why the pipeline has this shape
+**Going faster** (noisier selection, worse Phase 4 — fine for a smoke test, not for a
+result you would quote):
 
-Each stage exists because the simpler thing was tried and measured to fail.
+```matlab
+train_pipeline(struct('n_candidates', 3, 'dagger_rounds', 2))
+```
 
-**Why not just train an agent?** Four architectures (DDPG, TD3, SAC, PPO) at 1200 episodes
-each, plus two longer runs — roughly 25,000 episodes — produced **zero landings** under
-greedy evaluation, in three distinct and separately diagnosed failure modes. The reward
-landscape was verified on five independent properties, and the task is demonstrably
-solvable: the classical controller in `core/` lands **100% of all four phases at n=30 per
-phase** (mean impact 0.25 / 0.28 / 0.29 / 0.28 m/s) through the same `[-1,1]` action
-interface the agents were given. The gap is **exploration**. A landing requires a
-coordinated descent, lateral null and square-up, and undirected action sequences never
-produce one.
+### 5. Check what you trained
 
-**Why DAgger and not more demonstrations?** Plain cloning plateaued at P1 100% / P2 88% /
-P3 88% / **P4 25%**. The failure scales with *horizon*, not difficulty: a Phase 4 powered
-descent is ~8,900 agent steps against Phase 1's ~450, so accumulated action error has
-twenty times the exposure before touchdown. More expert data does not help, because it all
-lies on the expert's trajectory and the clone's problem is *everywhere else*. Nor does
-capacity — 512-unit networks lowered validation RMSE from 0.131 to 0.121 while the best
-landing rate **fell** from 72% to 66%.
+```matlab
+evaluate_final_agent
+```
 
-**Why β-mixing inside DAgger?** Pure clone rollouts from round one moved Phase 4 not at
-all, across two rounds and 137,000 corrective transitions. Over an 8,900-step descent the
-clone drifts somewhere genuinely unrecoverable, and the expert's label at such a state
-teaches nothing — no action recovers a vehicle 200 km downrange with the wrong energy.
-Mixing keeps early rounds near the expert's distribution, where recovery is still possible.
+30 episodes per phase, guardian on and off, worst case reported alongside the mean. Takes
+about six minutes. Compare against the reference table under [Results](#results) — landing
+rates should reproduce, the impact figures will drift, because candidate selection draws
+different initialisations every time.
 
-**Why select on landing rate and not validation loss?** Across candidates the correlation
-between validation RMSE and landing rate was **−0.021**. An epoch sweep had RMSE falling
-monotonically 0.184 → 0.107 while landing rate bounced 43 / 10 / 57 / 47 / 3 / 20 percent.
-Regression error selects a policy that hovers.
+### 6. Watch it fly
 
-**Why screen-then-verify?** Taking the maximum of 8 noisy n=8 screens is the winner's
-curse, and it bit: a clone that screened at 88% on Phase 4 scored **33%** when re-measured
-at n=30. Stage 4 screens wide and cheap, then re-measures a shortlist on fresh seeds.
+```matlab
+run_trained_agent('orbit')          % the full powered descent from 15.2 km
+run_trained_agent('terminal')       % 2.5 km terminal descent
+run_trained_agent('approach')       % 500 m glide slope
+run_trained_agent('touchdown')      % 50 m final touchdown
+```
 
-Retraining will not reproduce the published impact figures digit for digit — candidate
-selection draws different initialisations. The landing rates should reproduce.
+```
+Agent: cloned_agent_4phase.mat   sidecar ON
+Found a landed on attempt 1 of 25.
+  outcome landed | touchdown dy -0.45 m/s, dx +0.04 m/s, theta +0.001 rad
+  duration 1084.8 s | sidecar engagements 11
+```
 
----
+An animation window opens. Options:
 
-## The flight envelope
+```matlab
+run_trained_agent('orbit', struct('sidecar', 'off'))    % barrier detached
+run_trained_agent('orbit', struct('show', 'any'))       % next episode, pass or fail
+run_trained_agent('orbit', struct('animate', false))    % numbers only
+```
 
-Four curriculum phases, addressed by name everywhere (`core/phase_from_name.m`):
+Scenario names are resolved by [core/phase_from_name.m](Lunar-Lander/core/phase_from_name.m);
+numeric indices 1–4 still work.
 
-| Name | Start | Steps | What it is |
-|---|---|---|---|
-| `'touchdown'` | 50 m, 2 m/s | ~450 | Final touchdown only |
-| `'approach'` | 500 m, 10 m/s | ~1,200 | Glide-slope approach |
-| `'terminal'` | 2.5 km, 25 m/s | ~2,500 | Full terminal descent |
-| `'orbit'` | 15.2 km, 1697 m/s, 550 km downrange | ~8,900 | Apollo powered descent from PDI |
-
-Numeric indices still work, but `run_trained_agent('orbit')` says what it does and
-`run_trained_agent(true, struct('phase', 4))` did not.
-
----
-
-## Reproducing the paper's figures
+### 7. Reproduce the paper's experiments
 
 ```matlab
 demo_reel                       % the whole argument as four animated scenarios
-demo_agent_rescue('orbit')      % the sidecar rescuing the NEURAL agent from a blind altimeter
-run_fault_injection_study       % the full fault sweep, ~5 min
-evaluate_final_agent            % the non-intrusiveness table
+demo_agent_rescue('orbit')      % the barrier rescuing the NEURAL agent from a blind altimeter
+run_fault_injection_study       % the full fault sweep, ~5 min, 3000 episodes
+run_algorithm_trade             % the from-scratch RL negative result, hours
 ```
 
 `demo_reel` plays, in order: a healthy guarded flight (the barrier is almost silent); the
-same fault unguarded (it crashes); the same fault guarded (it lands); and a from-scratch
-DDPG agent whose actor collapsed to a constant — shown because the negative result is part
-of the argument about what the barrier has to contain.
+same fault unguarded (crash); the same fault guarded (landing); and a from-scratch DDPG
+agent whose actor collapsed to a constant. That fourth scenario needs an agent from
+`run_algorithm_trade` and is skipped silently if you have not run it; scenarios 1–3 carry
+the actual argument and need only `train_pipeline`.
+
+---
+
+## Command reference
+
+| Command | Needs a trained agent? | Time | What it does |
+|---|---|---|---|
+| `runtests('CI-tests','IncludeSubfolders',true)` | no | 95 s | the CI suite, 90 tests |
+| `demo_sidecar_rescue` | no | 30 s | barrier vs faulty **classical** pilot |
+| `main_simulation('HARDCODED_PILOT')` | no | 30 s | classical test bench, writes a telemetry plot |
+| `run_fault_injection_study` | no | 5 min | 60-cell fault sweep, the necessity experiment |
+| `train_pipeline` | builds one | 2 h | rebuild the agent from nothing |
+| `evaluate_final_agent` | yes | 6 min | the headline table, both guardian arms |
+| `run_trained_agent('orbit')` | yes | 1 min | animate one episode |
+| `demo_agent_rescue('orbit')` | yes | 2 min | barrier vs faulty **neural** agent |
+| `demo_reel` | yes | 5 min | all four scenarios in sequence |
+| `run_algorithm_trade` | builds four | hours | DDPG / TD3 / SAC / PPO from scratch |
+
+---
+
+## Where things get written
+
+Everything lands in `Lunar-Lander/`, and all of it is gitignored:
+
+| File | Written by |
+|---|---|
+| `demonstrations.mat` | `train_pipeline` stage 1 |
+| `cloned_agent_4phase.mat` | `train_pipeline` stages 2 and 4 — **the agent every demo loads** |
+| `dagger_corpus.mat` | `train_pipeline` stage 3 |
+| `fault_injection_results.mat` | `run_fault_injection_study` |
+| `algorithm_trade_results.mat`, `trade_agent_*.mat` | `run_algorithm_trade` |
+| `core/Flight_Logs/telemetry_*.png` | `main_simulation` |
+
+To point an entry point at a different agent:
+
+```matlab
+evaluate_final_agent(struct('agent_file', 'my_other_agent.mat'))
+```
+
+---
+
+## Troubleshooting
+
+**`Agent file not found: cloned_agent_4phase.mat`**
+Expected on a fresh clone — the `.mat` files are gitignored. Run `train_pipeline` (step 4).
+
+**`Required file not found: .../demonstrations.mat`**
+You asked `train_pipeline` to start at a stage whose input does not exist yet. The error
+names the stage to run first.
+
+**`Unrecognized function or variable`**
+The path is not set. `cd Lunar-Lander; addpath(genpath(pwd))`.
+
+**`Unknown scenario "descend"`**
+The error lists the valid names. They are `'touchdown'`, `'approach'`, `'terminal'`,
+`'orbit'`.
+
+**No animation window appears**
+The demos open figures, so they need an interactive MATLAB session — `matlab -batch` will
+run them but display nothing. Add `struct('animate', false)` if you only want the numbers.
+
+**`train_pipeline` produces a weak Phase 4**
+Some spread is normal; candidate selection is a draw. If mean Phase 4 lands under ~60%,
+re-run stages 3:4 rather than the whole pipeline — the demonstration dataset is not the
+problem, the corpus and the draw are.
+
+**Tests pass individually but fail in the suite**
+Almost always an unseeded `rng`. `reward_ordering_test` had exactly this bug; the fix is a
+`rng(...)` in the test, not in the code under test.
 
 ---
 
 ## Results
 
-### Non-intrusiveness — 30 episodes per cell, 240 episodes total
+### Non-intrusiveness — 30 episodes per cell, 240 episodes, zero failures
 
-| phase | guardian ON |  |  | guardian OFF |  |  |
+| phase | ON land% | ON impact | ON worst | OFF land% | OFF impact | OFF worst |
 |---|---|---|---|---|---|---|
-| | land% | impact | worst | land% | impact | worst |
 | 1 | 100% | 0.24 | 0.26 | 100% | 0.26 | 0.35 |
 | 2 | 100% | 0.21 | 0.21 | 100% | 0.30 | 0.38 |
 | 3 | 100% | 0.19 | 0.20 | 100% | 0.18 | 0.20 |
 | 4 | 100% | 0.46 | 0.50 | 100% | 0.54 | 0.60 |
 
-Zero failures. Worst touchdown impact 0.60 m/s against a 1.0 m/s limit — including 60
-complete powered descents from 15.2 km and 1697 m/s across 550 km of downrange. The
-barrier costs nothing when the controller is competent, and stays inactive for the whole
-flight.
+Worst touchdown impact 0.60 m/s against a 1.0 m/s limit, including 60 complete powered
+descents from orbit. The barrier costs a competent controller nothing and barely engages —
+11 engagements across the 1,085-second powered descent in the step 6 sample, against 153 in
+the faulty-pilot demo in step 3.
+
+The classical pilot on the same envelope: **100% on all four phases at n=30**, mean impact
+0.25 / 0.28 / 0.29 / 0.28 m/s.
 
 ### Necessity — fault injection on the classical pilot
 
-`run_fault_injection_study` sweeps four fault models × five magnitudes × three phases,
-25 episodes per cell, guardian on and off — 60 cells, 3,000 episodes, about five minutes.
+`run_fault_injection_study` sweeps four fault models × five magnitudes × three phases, 25
+episodes per cell, guardian on and off — 60 cells, 3,000 episodes, about five minutes.
 
 **Excluding the control-delay fault** (the architecture's known boundary, below), across
 the 36 perception and actuator cells with a non-zero fault:
@@ -215,7 +313,7 @@ the 36 perception and actuator cells with a non-zero fault:
 | worst touchdown impact | 87.07 m/s | **0.76 m/s** |
 | cells within the 1.0 m/s limit | — | **36 of 36** |
 
-Phase 3 in detail (the most demanding phase swept — a 2.5 km terminal descent):
+Phase 3 in detail (the most demanding phase swept):
 
 | fault | land% OFF | worst OFF | land% ON | worst ON |
 |---|---|---|---|---|
@@ -236,33 +334,81 @@ The barrier does not know where the pad is and is not trying to fly better than 
 It enforces one thing — never enter a state from which no recovery exists — and that alone
 converts a total loss into a landing across every perception and actuator fault swept.
 
-**The six cells it does not bound are all control delay ≥ 20 steps.** That is a real limit
-and it is in the table deliberately: the barrier reacts to true state, but it cannot act
-earlier than the actuator responds. Beyond roughly 2 seconds of latency there is no
-recovery available to enforce, and the architecture has nothing to offer.
-
+**The six cells it does not bound are all control delay ≥ 20 steps.** That limit is in the
+table deliberately: the barrier reacts to true state, but it cannot act earlier than the
+actuator responds. Beyond roughly 2 seconds of latency there is no recovery left to enforce.
 
 ### Negative results worth keeping
 
-These are in the repository deliberately; the architecture's boundary conditions are part
-of the argument.
-
-- **Zero-mean sensor noise does not discriminate.** Injecting Gaussian action noise up to
-  σ = 0.5 left landing rates at ~100% with *and* without the guardian. A PD loop
-  re-deciding at 10 Hz rejects zero-mean disturbance by construction. Every fault model in
-  `core/apply_sensor_fault.m` is therefore **systematic** — something the controller can
-  neither see nor correct.
-- **Control delay beyond ~20 steps is unrecoverable.** The barrier reacts to true state,
-  but it cannot act earlier than the actuator responds. This is a real limit of the
-  architecture, not a tuning failure.
+- **Zero-mean sensor noise does not discriminate.** Gaussian action noise up to σ = 0.5
+  left landing rates at ~100% *with and without* the guardian. A PD loop re-deciding at
+  10 Hz rejects zero-mean disturbance by construction. Every fault model in
+  [core/apply_sensor_fault.m](Lunar-Lander/core/apply_sensor_fault.m) is therefore
+  **systematic** — something the controller can neither see nor correct.
+- **Control delay beyond ~20 steps is unrecoverable**, as above.
 - **Severe velocity under-read used to be unrecoverable, and no longer is.** Before the
-  regime-aware barrier rework, a 0.7 under-read went 0% → 0% with the guardian. It now goes
-  0% → 96%, and a 0.9 under-read — an 87 m/s impact unguarded — lands at 0.76 m/s. The
-  barrier and the guidance law both changed between those two measurements, so the credit
-  is not cleanly attributable to one fix; the largest candidate is that the barrier was
-  computing available deceleration as `T_max·cos(θ)`, which goes negative past 90°.
+  regime-aware barrier rework a 0.7 under-read went 0% → 0%; it now goes 0% → 96%. The
+  barrier and the guidance law both changed between those measurements, so the credit is
+  not cleanly attributable; the largest candidate is that the barrier was computing
+  available deceleration as `T_max·cos(θ)`, which goes negative past 90°.
 - **From-scratch RL never landed.** Four architectures, ~25,000 episodes, three distinct
-  failure modes. `run_algorithm_trade.m` reproduces the comparison.
+  and separately diagnosed failure modes. `run_algorithm_trade` reproduces it.
+
+---
+
+## The flight envelope
+
+Four curriculum phases, addressed by name everywhere:
+
+| Name | Start | Agent steps | What it is |
+|---|---|---|---|
+| `'touchdown'` | 50 m, 2 m/s | ~450 | final touchdown only |
+| `'approach'` | 500 m, 10 m/s | ~1,200 | glide-slope approach |
+| `'terminal'` | 2.5 km, 25 m/s | ~2,500 | full terminal descent |
+| `'orbit'` | 15.2 km, 1697 m/s, 550 km downrange | ~8,900 | Apollo powered descent from PDI |
+
+---
+
+## Why the pipeline has this shape
+
+Each stage exists because the simpler thing was tried and measured to fail. If you are
+extending this, these are the walls to avoid walking into again.
+
+**Why not just train an agent?** Four architectures (DDPG, TD3, SAC, PPO) at 1200 episodes
+each, plus two longer runs — roughly 25,000 episodes — produced **zero landings** under
+greedy evaluation. The reward landscape was verified on five independent properties, and
+the task is demonstrably solvable: the classical controller lands 100% of all four phases
+through the same `[-1,1]` action interface the agents were given. The gap is
+**exploration**. A landing requires a coordinated descent, lateral null and square-up, and
+undirected action sequences never produce one.
+
+**Why DAgger and not more demonstrations?** Plain cloning plateaued at P1 100% / P2 88% /
+P3 88% / **P4 25%**. The failure scales with *horizon*, not difficulty: a Phase 4 descent
+is ~8,900 agent steps against Phase 1's ~450, so accumulated action error has twenty times
+the exposure before touchdown. More expert data does not help — it all lies on the expert's
+trajectory, and the clone's problem is *everywhere else*. Nor does capacity: 512-unit
+networks lowered validation RMSE from 0.131 to 0.121 while the best landing rate **fell**
+from 72% to 66%.
+
+**Why β-mixing inside DAgger?** Pure clone rollouts from round one moved Phase 4 not at all
+across two rounds and 137,000 corrective transitions. Over an 8,900-step descent the clone
+drifts somewhere genuinely unrecoverable, and the expert's label at such a state teaches
+nothing — no action recovers a vehicle 200 km downrange with the wrong energy. Mixing keeps
+early rounds near the expert's distribution, where recovery is still possible.
+
+**Why select on landing rate and not validation loss?** Across candidates the correlation
+between validation RMSE and landing rate was **−0.021**. An epoch sweep had RMSE falling
+monotonically 0.184 → 0.107 while landing rate bounced 43 / 10 / 57 / 47 / 3 / 20 percent.
+Regression error selects a policy that hovers.
+
+**Why screen-then-verify?** Taking the maximum of 8 noisy n=8 screens is the winner's curse,
+and it bit: a clone that screened at 88% on Phase 4 scored **33%** at n=30. Stage 4 screens
+wide and cheap, then re-measures a shortlist on fresh seeds.
+
+**Why the braking-to-terminal handoff is a smooth blend and not a switch.** A discontinuous
+handoff cannot be fitted by regression; the clone inherits a step it has no way to
+represent. This is a constraint the *learning* half imposes on the *classical* half, and it
+is easy to miss.
 
 ---
 
@@ -272,7 +418,7 @@ of the argument.
 Lunar-Lander/
   core/                          the plant and the classical stack
     get_sim_params.m             SINGLE SOURCE OF TRUTH for every physical constant
-    lunar_lander_dynamics.m      6-DOF-in-plane physics, curvilinear (flat-Moon) frame
+    lunar_lander_dynamics.m      in-plane physics, curvilinear (flat-Moon) frame
     scripted_pilot.m             terminal-phase guidance law (the expert)
     braking_guidance.m           Apollo P63 braking; blends smoothly into scripted_pilot
     safety_sidecar_filter.m      THE BARRIER. Regime-aware, reads true state only.
@@ -286,9 +432,9 @@ Lunar-Lander/
 
   RL-training-harness/
     LunarLanderEnv.m             the rl environment (classdef)
-    generate_demonstrations.m    stage 1
-    pretrain_actor_supervised.m  stage 2 / 4 regression
-    dagger_refine.m              stage 3
+    generate_demonstrations.m    pipeline stage 1
+    pretrain_actor_supervised.m  pipeline stages 2 and 4
+    dagger_refine.m              pipeline stage 3
     run_fault_injection_study.m  the necessity experiment
     run_algorithm_trade.m        the four-architecture negative result
     agent_architectures/         DDPG / TD3 / SAC / PPO builders
@@ -302,19 +448,20 @@ Lunar-Lander/
   demo_reel.m                    all of it, in sequence
 ```
 
-**The barrier itself is `core/safety_sidecar_filter.m`.** It is a few hundred lines of
-deterministic arithmetic with no learned components and no state, which is the point: it is
-small enough to argue about directly, and that is what makes the wrapped system trustable
-when the thing inside it is not.
+**The barrier itself is [core/safety_sidecar_filter.m](Lunar-Lander/core/safety_sidecar_filter.m).**
+A few hundred lines of deterministic arithmetic, no learned components, no state. That is
+the point: it is small enough to argue about directly, which is what makes the wrapped
+system trustable when the thing inside it is not.
 
 ---
 
 ## Continuous integration
 
-`.github/workflows/matlab-tests.yaml` runs the full suite on every push and pull request.
-Failures are republished as GitHub `::error::` annotations by
-`.github/scripts/run_ci_suite.m`, because job logs need admin rights to read while
-annotations are public — a red run should be diagnosable from a fork.
+[.github/workflows/matlab-tests.yaml](.github/workflows/matlab-tests.yaml) runs the full
+suite on every push and pull request. Failures are republished as GitHub `::error::`
+annotations by [.github/scripts/run_ci_suite.m](.github/scripts/run_ci_suite.m), because
+job logs need admin rights to read while annotations are public — a red run should be
+diagnosable from a fork.
 
 ---
 
