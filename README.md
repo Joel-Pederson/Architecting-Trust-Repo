@@ -49,7 +49,7 @@ addpath(genpath(pwd))
 Every entry point calls `addpath(genpath(...))` on itself, so running one directly from a
 fresh MATLAB session also works.
 
-### 1. Check the install — 85 tests, no training required
+### 1. Check the install — 90 tests, no training required
 
 ```matlab
 runtests('CI-tests', 'IncludeSubfolders', true)
@@ -293,7 +293,7 @@ Lunar-Lander/
     run_algorithm_trade.m        the four-architecture negative result
     agent_architectures/         DDPG / TD3 / SAC / PPO builders
 
-  CI-tests/                      85 tests across 17 files
+  CI-tests/                      90 tests across 18 files
   train_pipeline.m               rebuild the agent from nothing
   evaluate_final_agent.m         the headline table
   run_trained_agent.m            watch one episode
