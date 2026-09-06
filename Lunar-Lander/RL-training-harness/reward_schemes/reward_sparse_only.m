@@ -1,41 +1,50 @@
-function [Reward, IsDone] = reward_sparse_only(x, x_prev, ~, ~, ~, weights)
+function [Reward, IsDone, Outcome] = reward_sparse_only(x, ~, ~, ~, ~, params, weights)
 % REWARD_SPARSE_ONLY Calculates the reinforcement learning score using ONLY sparse rewards.
 %
-% Reward Philosophy (Sparse Only):
-%   - Dense Rewards (Calculated every step): 
-%       * NONE. The AI receives 0 points per step.
+% Kept as the ablation arm: it isolates how much of the agent's performance comes from
+% reward shaping versus the environment itself.
 %
-%   - Sparse Rewards (Calculated at termination): 
-%       * Success:            +10,000 points (Soft touchdown)
-%       * Crash:              -50,000 points (Hard impact or excessive tilt)
-%       * Out of Bounds (OOB):-50,000 points (Flew outside the 500km x 20km flight box)
+% Reward Philosophy (Sparse Only):
+%   - Dense Rewards: NONE. The AI receives 0 points per step.
+%   - Sparse Rewards (at termination):
+%       * Success: weights.success
+%       * Crash:   weights.crash
+%       * OOB:     weights.oob
+%
+% NOTE ON SIGNATURE: this takes seven arguments to match reward_dense_baseline exactly.
+% It previously declared six while LunarLanderEnv called it with seven, so `weights`
+% silently received the params struct and every terminal step died on an undefined
+% field. Both schemes must stay signature-compatible; the environment dispatches to
+% them through the same call.
 
-    % Unpack state variables
-    x_pos = x(1);
     y_pos = x(2);
-    dx = x(3);
-    dy = x(4);
+    x_pos = x(1);
+    dx    = x(3);
+    dy    = x(4);
     theta = x(5);
-    
-    % Initialize flags
+
     IsDone = false;
-    Reward = 0; % No dense rewards during flight!
-    
-    % Weights passed in directly
-    
+    Outcome = 'flying';
+    Reward = 0; % No dense rewards during flight
+
     % --- TERMINAL CONDITIONS ---
-    % Check ground contact and assess crash vs successful landing
-    if y_pos <= 0
+    if y_pos <= params.touchdown_alt
         IsDone = true;
-        % Impact tolerances: mark crash if any exceed safe limits
-        if abs(dy) > 1.0 || abs(dx) > 0.5 || abs(theta) > 0.1
-            Reward = weights.crash; % CRASH 
+        is_hard = abs(dy) > params.max_touchdown_dy || ...
+                  abs(dx) > params.max_touchdown_dx || ...
+                  abs(theta) > params.max_touchdown_tilt;
+        if is_hard
+            Outcome = 'crashed';
+            Reward = weights.crash;
         else
-            Reward = weights.success; % SUCCESS 
+            Outcome = 'landed';
+            Reward = weights.success;
         end
-    % Out-of-bounds terminal case
-    elseif abs(x_pos) > 500000 || y_pos > 20000
+    elseif abs(x_pos) > params.max_abs_x || y_pos > params.max_alt
         IsDone = true;
-        Reward = weights.oob; % OOB
+        Outcome = 'oob';
+        Reward = weights.oob;
     end
+
+    Reward = Reward / weights.reward_scale;
 end

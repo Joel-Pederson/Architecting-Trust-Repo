@@ -1,3 +1,7 @@
 *.asv
 *.png
 *.mat
+*.log
+
+# macOS Finder metadata
+.DS_Store

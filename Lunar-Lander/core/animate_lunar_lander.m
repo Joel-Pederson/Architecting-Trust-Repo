@@ -14,8 +14,10 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
     
     phase_trail = plot(ax_phase, dy(1), y(1), 'm-', 'LineWidth', 2);
     phase_current = plot(ax_phase, dy(1), y(1), 'ko', 'MarkerFaceColor', 'y', 'MarkerSize', 8);
-    xlim(ax_phase, [min(min(dy), -50), max(max(dy), 10)]);
-    ylim(ax_phase, [0, max(15000, max(y)) + 1000]);
+    % Axes fit the actual flight envelope. Hard-coding a 15,000 m ceiling squashed every
+    % realistic descent profile into a sliver at the bottom of the plot.
+    xlim(ax_phase, [min(min(dy), -1) * 1.1, max(max(dy), 1) * 1.1]);
+    ylim(ax_phase, [0, max(y) * 1.1 + 1]);
     
     % FIGURE 2: Main Dual-Cam & Dashboard Visualizer
     fig_main = figure('Name', 'Lunar Lander Advanced Visualizer', 'Position', [600, 100, 1000, 700]);
@@ -114,11 +116,9 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
     % Set initial views
     axis(ax_track, 'equal');
     
-    % Scale Global View to fit the entire horizontal and vertical trajectory
-    min_x = min(0, min(x)) - 1000;
-    max_x = max(0, max(x)) + 1000;
-    min_y = min(-500, min(y)) - 500;
-    max_y = max(15000, max(y)) + 1000;
+    % Scale Global View to fit the entire trajectory. Logic lives in
+    % core/compute_view_limits.m so it can be regression-tested.
+    [min_x, max_x, min_y, max_y] = compute_view_limits(x, y);
     xlim(ax_global, [min_x, max_x]);
     ylim(ax_global, [min_y, max_y]);
     
@@ -135,7 +135,27 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
               'Callback', @(~,~) run_replay());
 
     is_animating = false;
-    skip_frames = 2; 
+
+    % Playback pacing, derived from the data rather than fixed.
+    %
+    % skip_frames was hardcoded to 2, which suited telemetry logged at the 50 Hz PHYSICS
+    % rate: a 900 s run is 45,000 samples, so every second frame still gave a long
+    % animation. Episodes rolled at the 10 Hz AGENT rate are ~300 samples for a 30 s
+    % flight, and at skip 2 that renders in a fraction of a second - the figure appears
+    % already finished and REPLAY looks like it does nothing.
+    %
+    % Render a bounded number of frames spread over a fixed wall-clock duration, so
+    % playback looks the same whether the source is 300 samples or 45,000.
+    % TARGET_DURATION sets the PAUSE budget, not the total: rendering costs roughly as
+    % much again, so a 5 s budget plays back in about 10-13 s. Measured on both a 179
+    % frame Phase 1 landing and a 1706 frame Phase 3 descent, which is the point - the
+    % two now take a comparable time to watch despite a 10x difference in sample count.
+    TARGET_FRAMES   = 300;    % upper bound on rendered frames
+    TARGET_DURATION = 5.0;    % seconds of PAUSE spread across the replay
+
+    skip_frames = max(1, round(numel(t) / TARGET_FRAMES));
+    n_rendered  = numel(1:skip_frames:numel(t));
+    frame_pause = TARGET_DURATION / max(1, n_rendered);
     
     % Run animation once automatically on launch
     run_replay();
@@ -146,7 +166,13 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
             return; % Prevent overlapping animation loops if clicked while running
         end
         is_animating = true;
-        
+        % Guarantee the flag is cleared even if the loop below throws. Without this, one
+        % error anywhere in the render path leaves is_animating stuck true, and every
+        % subsequent REPLAY click returns immediately at the guard above - the button
+        % appears dead for the life of the figure, with no error shown, which is a very
+        % confusing thing to debug.
+        reset_flag = onCleanup(@() set_animating(false));
+
         % Reset trailing paths and status for replay
         if isvalid(ax_global) && isvalid(ax_phase)
             trail_line.XData = x(1);
@@ -158,6 +184,27 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
             txt_status_val.Color = 'k';
         end
         
+        % --- Glyph scaling for the GLOBAL view ---
+        % The global axes are NOT axis-equal: a Phase 1 landing spans ~20 m across and
+        % ~65 m up, so a single scale factor draws a 7 m x 4.3 m lander at 35% of the
+        % plot width and 6% of its height - hugely stretched. The tracking camera does not
+        % have this problem because it is axis-equal.
+        %
+        % Fix: scale x and y independently so the glyph's PIXEL aspect matches its true
+        % one. Writing upp for data-units-per-pixel, the on-screen shape is
+        %     screen = diag(gscale_x/upp_x, gscale_y/upp_y) * R * shape
+        % so setting gscale_x/upp_x == gscale_y/upp_y makes that a UNIFORM scale of the
+        % rotated true shape: undistorted, and correctly rotated with it.
+        %
+        % Computed per replay rather than per frame so a window resize is picked up on
+        % the next run without paying for getpixelposition on every frame.
+        GLYPH_FRAC = 0.07;                       % of visible height
+        ax_px  = getpixelposition(ax_global);
+        upp_x  = diff(xlim(ax_global)) / max(ax_px(3), 1);
+        upp_y  = diff(ylim(ax_global)) / max(ax_px(4), 1);
+        gscale_y = max(1, (GLYPH_FRAC * diff(ylim(ax_global))) / H);
+        gscale_x = gscale_y * (upp_x / upp_y);
+
         for i = 1:skip_frames:length(t)
             if ~isvalid(fig_main) || ~isvalid(fig_phase)
                 is_animating = false;
@@ -192,13 +239,12 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
             b_coords = R * [body_x; body_y];
             n_coords = R * [nozzle_x; nozzle_y];
             
-            global_scale = 50; 
-            
-            % Global View patches
-            body_patch_g.XData = (b_coords(1,:) * global_scale) + curr_x;
-            body_patch_g.YData = (b_coords(2,:) * global_scale) + curr_y;
-            nozzle_patch_g.XData = (n_coords(1,:) * global_scale) + curr_x;
-            nozzle_patch_g.YData = (n_coords(2,:) * global_scale) + curr_y;
+            % Global View patches. gscale_x and gscale_y are computed once per replay
+            % (see below) and are deliberately DIFFERENT, to cancel the axes' aspect.
+            body_patch_g.XData = (b_coords(1,:) * gscale_x) + curr_x;
+            body_patch_g.YData = (b_coords(2,:) * gscale_y) + curr_y;
+            nozzle_patch_g.XData = (n_coords(1,:) * gscale_x) + curr_x;
+            nozzle_patch_g.YData = (n_coords(2,:) * gscale_y) + curr_y;
             
             % Tracking View patches
             body_patch_t.XData = b_coords(1,:) + curr_x;
@@ -227,8 +273,8 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
                 
                 f_coords = R * [flame_x_base; flame_y_base];
                 
-                flame_patch_g.XData = (f_coords(1,:) * global_scale) + curr_x;
-                flame_patch_g.YData = (f_coords(2,:) * global_scale) + curr_y;
+                flame_patch_g.XData = (f_coords(1,:) * gscale_x) + curr_x;
+                flame_patch_g.YData = (f_coords(2,:) * gscale_y) + curr_y;
                 flame_patch_t.XData = f_coords(1,:) + curr_x;
                 flame_patch_t.YData = f_coords(2,:) + curr_y;
             else
@@ -305,8 +351,16 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
                 t(i), curr_y, curr_x, rad2deg(curr_theta));
             txt_telemetry.String = telemetry_str;
             
-            drawnow limitrate;
+            % Plain drawnow, not limitrate: limitrate DROPS frames to keep up, which on a
+            % short agent-rate episode discards most of the animation. The pause sets the
+            % pace instead.
+            drawnow;
+            pause(frame_pause);
         end
         is_animating = false;
+    end
+
+    function set_animating(tf)
+        is_animating = tf;
     end
 end

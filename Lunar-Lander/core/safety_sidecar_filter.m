@@ -57,8 +57,10 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     T_req_alt = 0;           % Default to 0 required emergency thrust
     
     % How much physical distance exists between the ship and the hover floor?
-    distance_left = y_pos - safety_buffer_alt; 
-    
+    distance_left = y_pos - safety_buffer_alt;
+    margin = inf; % Default to infinite safety margin unless falling
+    blending_zone = 5; % Default warning envelope width (meters), rescaled below when falling
+
     if dy < -0.5 % ACTIVE BRAKING: The ship is falling fast enough to warrant evaluation.
         
         % Calculate absolute maximum vertical braking capability.
@@ -73,9 +75,10 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
             % Derived from kinematics: v_f^2 = v_i^2 + 2ad -> d = v_i^2 / 2a
             d_min_stop = (dy^2) / (2 * a_max);
             
-            % Margin is the "slack" in the system. 
+            % Margin is the "slack" in the system.
             % If margin == 0, the ship is at the exact point of no return.
             margin = distance_left - d_min_stop;
+            blending_zone = max(5, 0.3 * d_min_stop);
         else
             % CRITICAL SCENARIO: Gravity is currently stronger than the available vertical thrust capability.
             % This happens if the ship is tilted too far (e.g. 90 degrees), or if the engine is too weak.
@@ -83,29 +86,16 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
             margin = -inf; 
         end
         
-        % The Blending Zone prevents violent, structural-damaging binary switching.
-        % Instead of waiting until margin == 0 and slamming the throttle from 0% to 100%, 
-        % the sidecar smoothly ramps up its authority over a 50-meter window.
-        blending_zone = 50; % meters
-        
-        if margin < blending_zone
-            % --- 3. ROTATIONAL CONTROL BARRIER FUNCTION (ACTION GOVERNOR) ---
-            
-            % "The RCS side thrusters shall be seized by the action governor to force theta to 0."
-            
-            % If the ship is entering the danger zone, it MUST be perfectly upright.
-            % If it is tilted, the main engine will fire sideways and fail to arrest the fall.
-            % A high-gain Proportional-Derivative (PD) controller is deployed to violently 
-            % torque the ship back to vertical (theta = 0).
-            kp = Tau_max / (pi/4); % Apply 100% max torque if tilted 45 degrees
-            kd = Tau_max / (pi/4); % Damping factor to prevent over-spinning
-            
-            Tau_req = -kp * theta - kd * dtheta;
-            
-            % Seize control of the RCS thrusters (u_actual(2)) and clamp to hardware limits
-            u_actual(2) = max(-Tau_max, min(Tau_req, Tau_max));
-        end
-        
+        % The Blending Zone (set above) prevents violent, structural-damaging binary
+        % switching. Instead of waiting until margin == 0 and slamming the throttle from
+        % 0% to 100%, the sidecar smoothly ramps up its authority as the boundary nears.
+        %
+        % The zone is scaled to the ship's actual braking distance rather than being a
+        % fixed width. A fixed 50 m window is catastrophic at low speed: on a gentle
+        % 2 m/s descent the braking distance is ~1 m, so a 50 m window means the sidecar
+        % holds authority continuously below 51 m altitude and the agent never flies the
+        % approach itself. Scaling with d_min_stop keeps the barrier proportionate:
+        % wide during a fast 25 m/s descent, narrow during a slow terminal hover.
         if margin <= 0
             % POINT OF NO RETURN: Spacecraft has pierced the mathematical boundary. 
             % Absolute maximum panic effort. The AI is entirely locked out of the throttle.
@@ -121,6 +111,38 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
         % HOVER MODE: Spacecraft has arrived at the safety buffer and arrested its fall.
         % To prevent bouncing, output exactly enough thrust to counteract apparent gravity (F = mg).
         T_req_alt = m_total * g_apparent;
+    end
+    
+    % --- 3. ROTATIONAL CONTROL BARRIER FUNCTION (ACTION GOVERNOR) ---
+    % "The RCS side thrusters shall be seized by the action governor to force theta to 0 if the ship exceeds safe bounds, OR if it is in the altitude danger zone."
+    
+    max_pitch = pi/4;          % 45 degrees - hard structural/control limit, enforced everywhere
+    max_pitch_braking = 0.35;  % ~20 degrees - tighter limit while inside the braking envelope
+
+    % The barrier fires in two cases:
+    %   1. The ship exceeds 45 degrees of tilt anywhere in the flight envelope. Past this
+    %      point cos(theta) has eaten enough of the main engine's vertical component that
+    %      recovery authority is genuinely at risk.
+    %   2. The ship is inside the altitude braking envelope AND tilted past 20 degrees,
+    %      where wasted vertical thrust directly threatens the stopping distance.
+    %
+    % It deliberately does NOT fire merely because the ship is in the braking envelope.
+    % Seizing the RCS for the whole terminal descent pins theta at 0, and since
+    % ddx = -T*sin(theta)/m, that freezes horizontal velocity at whatever it was when the
+    % barrier engaged. With a touchdown limit of 0.5 m/s lateral and approach drift of
+    % 10-20 m/s, that made a safe landing physically unreachable - the agent was being
+    % asked to null drift with the only actuator that can do it taken away. The agent now
+    % keeps torque authority to fly the approach, and the barrier intervenes only when
+    % attitude itself becomes the hazard.
+    if abs(theta) > max_pitch || (dy < -0.5 && margin < blending_zone && abs(theta) > max_pitch_braking)
+        % High-gain PD controller to aggressively torque the ship to vertical
+        kp = Tau_max / max_pitch; 
+        kd = Tau_max / max_pitch; 
+        
+        Tau_req = -kp * theta - kd * dtheta;
+        
+        % Seize control of the RCS thrusters (u_actual(2))
+        u_actual(2) = max(-Tau_max, min(Tau_req, Tau_max));
     end
 
     % --- 4. FUEL BARRIER (BINGO FUEL) ---
@@ -185,9 +207,17 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     
     % --- 6. LOGGING & STATE AUGMENTATION ---
     
-    % Check if the Sidecar had to alter the AI's requested command.
-    % A small tolerance (0.1) is added to account for floating point math inaccuracies.
-    if abs(u_actual(1) - u_nominal(1)) > 0.1 || abs(u_actual(2) - u_nominal(2)) > 0.1
+    % Check if the Sidecar had to MATERIALLY alter the AI's requested command.
+    %
+    % The tolerance is a fraction of actuator authority, not an absolute newton count. A
+    % 0.1 N threshold on a 45 kN engine is a rounding error: it counted sub-newton
+    % differences as safety interventions, so an agent flying along the thrust floor
+    % registered dozens of "engagements" per descent. That inflates the veto metric the
+    % A/B study reports on and makes the barrier look far twitchier than it is.
+    thrust_tol = 0.005 * T_max;     % ~225 N of 45 kN
+    torque_tol = 0.005 * Tau_max;   % ~10 Nm of 2 kNm
+
+    if abs(u_actual(1) - u_nominal(1)) > thrust_tol || abs(u_actual(2) - u_nominal(2)) > torque_tol
         % This flag is sent back to the environment. The AI receives a large penalty 
         % every time this triggers. This teaches the AI to fear the boundaries and learn 
         % to fly so perfectly that the Sidecar never has to wake up.

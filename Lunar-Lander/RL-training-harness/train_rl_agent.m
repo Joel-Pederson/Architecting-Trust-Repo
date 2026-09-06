@@ -1,80 +1,75 @@
-function trainStats = train_rl_agent(agent_type, reward_scheme)
+function [trainStats, agent] = train_rl_agent(agent_type, reward_scheme, guardian_mode, do_visualize)
 % TRAIN_RL_AGENT Master orchestrator for Reinforcement Learning
-%clc
+%
 % Inputs:
-%   agent_type    - String specifying the type of agent to train (e.g., 'ddpg', 'ppo')
-%   reward_scheme - (Optional) String specifying the reward scheme (e.g., 'DenseBaseline', 'SparseOnly')
+%   agent_type    - String specifying the agent architecture (e.g. 'ddpg')
+%   reward_scheme - (Optional) 'DenseBaseline' (default) or 'SparseOnly'
+%   guardian_mode - (Optional) 'on' (default) trains with the Developmental Guardian
+%                   filtering every command; 'off' trains the unprotected control arm
+%                   for the A/B study.
+%   do_visualize  - (Optional) true (default) to animate the trained policy afterwards
 %
 % Outputs:
 %   trainStats - Struct containing training performance data
+%   agent      - The trained agent
 
-    if nargin < 2
-        reward_scheme = 'DenseBaseline';
-    end
+    if nargin < 2 || isempty(reward_scheme),  reward_scheme = 'DenseBaseline'; end
+    if nargin < 3 || isempty(guardian_mode),  guardian_mode = 'on';            end
+    if nargin < 4 || isempty(do_visualize),   do_visualize  = true;            end
 
-    % --- Reinforcement Learning Agent Setup & Training ---
     % Dynamically add the entire repository (and all subfolders) to the MATLAB path
     currentFolder = fileparts(mfilename('fullpath'));
     repoRoot = fullfile(currentFolder, '..');
     addpath(genpath(repoRoot));
-    
+
     % --- 1. Load the Environment ---
-    % Initialize the wrapper with the desired reward scheme
-    env = LunarLanderEnv(reward_scheme);
-    
+    env = LunarLanderEnv(reward_scheme, guardian_mode);
+
     % --- 2. Build the Agent ---
-    obsInfo = getObservationInfo(env); 
+    obsInfo = getObservationInfo(env);
     actInfo = getActionInfo(env);
-    
-    switch lower(agent_type)
-        case 'ddpg'
-            agent = build_ddpg_agent(obsInfo, actInfo, env.params.dt);
-        case 'ppo'
-            error('PPO agent builder is not yet implemented. Please resolve the pending GitHub issue.');
-        otherwise
-            error('Unknown agent type: %s. Supported types: ''ddpg''', agent_type);
-    end
-    
+
+    % Pass the AGENT sample time (0.1 s), not the physics step (0.02 s).
+    agent = build_agent(agent_type, obsInfo, actInfo, env.params.agent_dt);
+
     % --- 3. Configure Training ---
-    trainOpts = get_training_options();
+    trainOpts = get_training_options(agent_type);
 
     % --- 4. Execution ---
-    disp('Starting AI Training...');
+    fprintf('Starting AI Training  [agent=%s  reward=%s  guardian=%s]\n', ...
+        lower(agent_type), reward_scheme, guardian_mode);
     trainStats = train(agent, env, trainOpts);
-    
-    % Save the final trained agent to disk with a unique name for A/B testing!
-    agent_filename = sprintf('trained_lunar_agent_%s_%s.mat', lower(agent_type), reward_scheme);
+
+    % Save the final trained agent with a unique name for A/B testing
+    agent_filename = sprintf('trained_lunar_agent_%s_%s_guardian_%s.mat', ...
+        lower(agent_type), reward_scheme, guardian_mode);
     save(fullfile(repoRoot, agent_filename), 'agent');
     fprintf('Successfully saved: %s\n', agent_filename);
-    
+
     % --- 5. Post-Training Visualization ---
-    disp('Training Complete! Simulating the best agent...');
-    
-    simOpts = rlSimulationOptions('MaxSteps', trainOpts.MaxStepsPerEpisode);
-    experience = sim(env, agent, simOpts);
-    
-    % Extract telemetry from the simulation experience
-    obs_data = experience.Observation.LunarLanderStates.Data;
-    act_data = experience.Action.LanderThrustAndTorque.Data;
-    
-    % Squeeze the 3D arrays into 1D vectors and un-normalize them to physical units
-    x      = squeeze(obs_data(1,:,:)) * 500000;
-    y      = squeeze(obs_data(2,:,:)) * 20000;
-    dy     = squeeze(obs_data(4,:,:)) * 150;
-    theta  = squeeze(obs_data(5,:,:)) * pi;
-    fuel   = squeeze(obs_data(7,:,:)) * 8200;
-    
-    % Scale the AI's neural network [-1, 1] thrust output back into physical Newtons for the plot
-    raw_thrust = squeeze(act_data(1,:,:));
-    thrust_history = (raw_thrust + 1) / 2 * env.params.max_main_thrust;
-    
-    % Create time vector
-    t = (0:length(x)-1) * env.params.dt;
-    
-    % Generate dummy veto array since it isn't tracked in the observation states
-    veto_history = zeros(size(t));
-    
-    % Launch the Advanced Visualizer
+    if do_visualize
+        disp('Training Complete! Simulating the trained agent...');
+        simulate_and_animate(env, agent);
+    end
+end
+
+
+function simulate_and_animate(env, agent)
+% Runs one episode and renders it.
+%
+% Telemetry comes from rollout_episode, which carries the TRUE physics state in real
+% units. The previous version reconstructed telemetry by multiplying the normalized
+% observation by 500000 / 20000 / 150 while get_ai_observation actually normalizes by
+% 1000 / 3000 / 100 - so plotted lateral position was 500x too large and altitude 6.7x
+% too large. With axis equal on the tracking view that flattened every trajectory onto
+% the ground, which is why the lander appeared to start just above the surface.
+
+    ep = rollout_episode(env, agent);
+
+    fprintf('Episode outcome: %s | reward: %.2f | sidecar engagements: %d | steps: %d\n', ...
+        ep.outcome, ep.reward, ep.veto_count, ep.steps);
+
     disp('Launching Advanced Visualizer...');
-    animate_lunar_lander(t, x, y, dy, theta, thrust_history, fuel, veto_history, env.params);
+    animate_lunar_lander(ep.t, ep.states(1, :), ep.states(2, :), ep.states(4, :), ...
+        ep.states(5, :), ep.controls(1, :), ep.states(7, :), double(ep.veto), env.params);
 end

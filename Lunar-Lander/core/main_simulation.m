@@ -27,12 +27,19 @@ function main_simulation(CONTROL_MODE, agent_mat_file, USE_SIDECAR)
     dt = params.dt; 
     
     % --- 2. Simulation Settings ---
-    max_steps = params.max_steps;
+    max_steps = params.max_sim_steps;
     
     % If testing the RL agent, load the specified brain
     if strcmp(CONTROL_MODE, 'RL_AGENT')
         fprintf('Loading Agent from: %s\n', agent_mat_file);
-        load(agent_mat_file, 'agent'); 
+        load(agent_mat_file, 'agent');
+
+        % Evaluate the greedy policy. SAC and PPO carry stochastic actors, so getAction
+        % would otherwise SAMPLE from the policy distribution and this demonstration run
+        % would show a deliberately noisy pilot rather than the trained one.
+        if isprop(agent, 'UseExplorationPolicy')
+            agent.UseExplorationPolicy = false;
+        end
     end
 
 % --- 3. Initial State ---
@@ -68,54 +75,12 @@ for step = 1:max_steps
             
         case 'HARDCODED_PILOT'
             % EXPECTED OUTCOME: Successful landing, but highly inefficient fuel usage.
-            % A fully functional PD-controller autopilot. It perfectly calculates thrust vectors 
-            % but relies on rigid math rather than Neural Network optimization.
-            
-            m_total = params.dry_mass + x_current(7) + x_current(8);
-            
-            % 1. Target Velocities
-            target_dx = 0; % Always aim to cancel horizontal velocity
-            
-            % Target descent rate based on altitude: v = -sqrt(2 * a * s)
-            % Fall moderately fast at high altitudes, slow down to -1 m/s near the ground
-            target_dy = -max(sqrt(2 * 0.3 * max(x_current(2), 0.1)), 1.0); 
-            
-            % 2. Velocity Errors
-            error_dx = target_dx - x_current(3);
-            error_dy = target_dy - x_current(4);
-            
-            % 3. Desired Thrust Vector
-            % Scale gains based on mass (F = m*a) to achieve ~0.5 to 1.0 m/s^2 correction per 1 m/s error
-            Kp_x = m_total * 0.8; 
-            Kp_y = m_total * 1.5; 
-            desired_thrust_x = error_dx * Kp_x;
-            desired_thrust_y = (error_dy * Kp_y) + (params.gravity * m_total); % Feed-forward gravity
-            
-            % 4. Target Attitude and Thrust Magnitude
-            T_mag = sqrt(desired_thrust_x^2 + desired_thrust_y^2);
-            theta_target = atan2(-desired_thrust_x, desired_thrust_y);
-            
-            % 5. Attitude Controller (PD)
-            error_theta = theta_target - x_current(5);
-            % Wrap angle to [-pi, pi]
-            error_theta = atan2(sin(error_theta), cos(error_theta)); 
-            
-            % Massively increase damping to prevent phase-space oscillations
-            Kp_theta = 50000;
-            Kd_theta = 100000;
-            u_torque = (error_theta * Kp_theta) - (x_current(6) * Kd_theta);
-            u_torque = max(min(u_torque, params.max_side_torque), -params.max_side_torque);
-            
-            % 6. Engine Controller
-            % Only fire the main engine if we are pointed within 15 degrees (~0.25 rad) of the target
-            if abs(error_theta) < 0.25
-                u_thrust = max(min(T_mag, params.max_main_thrust), 0);
-            else
-                u_thrust = 0; % Wait until rotation completes
-            end
-            
-            u_nominal = [u_thrust; u_torque];
-            
+            % A fully functional PD-controller autopilot. It perfectly calculates thrust
+            % vectors but relies on rigid math rather than Neural Network optimization.
+            % Lives in core/scripted_pilot.m so the trade study and the environment
+            % sanity checks can use the exact same controller.
+            u_nominal = scripted_pilot(x_current, params);
+
         case 'RL_AGENT'
             % EXPECTED OUTCOME: Optimal, smooth landing.
             % The trained neural network attempts to land the ship efficiently. 
@@ -123,17 +88,22 @@ for step = 1:max_steps
             % the Sidecar's safety veto (which carries a massive reward penalty).
             
             % 1. Provide the agent with the observation state
-            obs = get_ai_observation(x_current, params); 
-            
+            obs = get_ai_observation(x_current, params);
+
             % 2. Ask the trained neural network for its raw requested action [-1, 1]
-            action_cell = getAction(agent, obs);
-            raw_action = cell2mat(action_cell); 
-            
-            % 3. Scale neural net output to physical hardware limits
-            u_thrust = (raw_action(1) + 1) / 2 * params.max_main_thrust;
-            u_torque = raw_action(2) * params.max_side_torque;
-            
-            u_nominal = [u_thrust; u_torque];
+            %    The cell wrapper is required: getAction expects one cell per observation
+            %    channel, and this call site was passing a bare array.
+            action_cell = getAction(agent, {obs});
+            raw_action = cell2mat(action_cell);
+
+            % 3. Scale neural net output to physical hardware limits.
+            %    THROUGH THE SHARED MAP. This branch previously carried its own copy of
+            %    the retired raw-throttle map, u = (a+1)/2 * T_max, while the training
+            %    environment had moved to gravity-compensated thrust. An agent evaluated
+            %    here was therefore flying a different plant than it trained on: at full
+            %    tanks, action 0 commanded 22.5 kN against the environment's 20.3 kN
+            %    hover. Every telemetry_RL_AGENT*.png in Flight_Logs predates this fix.
+            u_nominal = action_to_command(raw_action, x_current, params);
     end
     
     % B. The Action Governor (Safety Filter)
@@ -153,6 +123,11 @@ for step = 1:max_steps
     x_next = x_current + dxdt * dt;
     % Wrap angle theta to [-pi, pi] so it never accumulates indefinitely
     x_next(5) = atan2(sin(x_next(5)), cos(x_next(5)));
+
+    % Clamp tanks at empty. Euler stepping can otherwise drive fuel mass slightly
+    % negative, which quietly corrupts every mass and inertia term downstream of it.
+    x_next(7) = max(0, x_next(7));
+    x_next(8) = max(0, x_next(8));
     
     % D. Terminal Condition Check (Physics Boundary)
     % The simulation ends if the spacecraft hits the ground
