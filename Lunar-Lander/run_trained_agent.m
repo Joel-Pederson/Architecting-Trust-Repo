@@ -118,9 +118,7 @@ function ep = run_trained_agent(scenario, opts)
     if use_sidecar, gm = 'on'; else, gm = 'off'; end
     env = LunarLanderEnv('DenseBaseline', gm);
     if ~isempty(opts.phase)
-        % Four phases now. A hardcoded (1:3) silently could not select the powered
-        % descent, which is the one most worth watching.
-        env.CurriculumWeights = double((1:numel(p.phase_max_steps)) == opts.phase);
+        select_phase(env, opts.phase);
     end
 
     fprintf('\nAgent: %s   sidecar %s\n', opts.agent_file, upper(gm));

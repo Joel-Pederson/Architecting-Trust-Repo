@@ -74,7 +74,9 @@ function m = evaluate_policy(env, agent, n_episodes)
     % and a 2500 m terminal descent hides which regime actually works, which is exactly
     % the claim the paper needs to be precise about.
     landed = strcmp(outcomes, 'landed');
-    for ph = 1:3
+    % Every CONFIGURED phase, not a hardcoded three. The powered descent was invisible
+    % to every architecture comparison until this read the phase count instead.
+    for ph = 1:numel(env.params.phase_max_steps)
         sel = (phases == ph);
         sel_g = sel & grounded;
         if any(sel)

@@ -89,7 +89,7 @@ end
 function ep = fly(agent, p, guardian, alt_bias, phase)
 % Same seed both runs, so the only difference is the barrier.
     env = LunarLanderEnv('DenseBaseline', guardian);
-    env.CurriculumWeights = double((1:numel(p.phase_max_steps)) == phase);
+    select_phase(env, phase);
     rng(101);
     reset(env);
 

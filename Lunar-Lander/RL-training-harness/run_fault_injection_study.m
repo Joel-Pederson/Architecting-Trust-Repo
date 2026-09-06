@@ -87,7 +87,7 @@ end
 
 function m = one_cell(p, phase, guardian, fault, mag, n, seed)
     env = LunarLanderEnv('DenseBaseline', guardian);
-    env.CurriculumWeights = double((1:3) == phase);
+    select_phase(env, phase);
     rng(seed);   % identical initial conditions for the on/off pair
     landed = 0; impacts = []; vetoes = zeros(1,n);
     for ep = 1:n

@@ -71,7 +71,7 @@ function demos = generate_demonstrations(opts)
 
     for phase = 1:n_phases
         env = LunarLanderEnv('DenseBaseline', opts.guardian);
-        env.CurriculumWeights = double((1:n_phases) == phase);
+        select_phase(env, phase);
 
         for ep = 1:per_phase(phase)
             % Noise on a fraction of episodes. A purely on-policy expert dataset lies on

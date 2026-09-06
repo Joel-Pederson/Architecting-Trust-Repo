@@ -160,7 +160,8 @@ function best = select_clone(demos, p, opts, base_seed, do_verify)
         [a, info] = pretrain_actor_supervised(a, demos, p, ...
             struct('max_epochs', opts.epochs, 'verbose', false));
         cands{k} = a;
-        screen(k,:) = rates_at(a, p, opts.screen_n, 111);
+        screen(k,:) = phase_landing_rates(a, p, ...
+                          struct('n_episodes', opts.screen_n, 'seed', 111)).rate;
         fprintf('%8d %10.4f %7.0f%% %7.0f%% %7.0f%% %7.0f%% %8.0f%%\n', k, info.rmse_val, ...
             100*screen(k,1), 100*screen(k,2), 100*screen(k,3), 100*screen(k,4), ...
             100*mean(screen(k,:)));
@@ -185,7 +186,8 @@ function best = select_clone(demos, p, opts, base_seed, do_verify)
     verify = nan(size(screen));
     best_mean = -1; best_k = short(1);
     for k = short
-        verify(k,:) = rates_at(cands{k}, p, opts.verify_n, 777);
+        verify(k,:) = phase_landing_rates(cands{k}, p, ...
+                          struct('n_episodes', opts.verify_n, 'seed', 777)).rate;
         fprintf('  verify %d: P1 %3.0f%% P2 %3.0f%% P3 %3.0f%% P4 %3.0f%% | mean %3.0f%%\n', ...
             k, 100*verify(k,1), 100*verify(k,2), 100*verify(k,3), 100*verify(k,4), ...
             100*mean(verify(k,:)));
@@ -201,26 +203,6 @@ function best = select_clone(demos, p, opts, base_seed, do_verify)
                   'verify', verify, 'rates', verify(best_k,:));
 end
 
-
-function r = rates_at(agent, p, n, seed)
-% Landing rate PER PHASE. A pooled average would be meaningless: a Phase 4 descent runs
-% ~8900 agent steps against Phase 1's ~450, so pooling hides which regime works.
-    n_phases = numel(p.phase_max_steps);
-    r = zeros(1, n_phases);
-    for ph = 1:n_phases
-        env = LunarLanderEnv('DenseBaseline', 'on');
-        env.CurriculumWeights = double((1:n_phases) == ph);
-        rng(seed);
-        landed = 0;
-        for k = 1:n
-            % Roll to the LONGEST phase budget, not params.max_agent_steps, or a Phase 4
-            % descent is truncated mid-flight and scored as a timeout that never happened.
-            ep = rollout_episode(env, agent, max(p.phase_max_steps));
-            landed = landed + strcmp(ep.outcome, 'landed');
-        end
-        r(ph) = landed / n;
-    end
-end
 
 
 function s = summarise(demos)

@@ -100,7 +100,7 @@ function [agent, history, aggregated] = dagger_refine(agent, demos, params, opts
                     struct('max_epochs', opts.epochs, 'verbose', false));
 
         % --- 3. MEASURE ---
-        rates = phase_landing_rates(agent, params, 8);
+        rates = phase_landing_rates(agent, params, struct('n_episodes', 8)).rate;
         history(end+1) = struct('iter', it, 'rates', rates, 'n_added', n_added); %#ok<AGROW>
 
         if opts.verbose
@@ -122,7 +122,7 @@ function eps_out = collect_corrections(agent, p, eps_per_phase, beta)
 
     for ph = 1:numel(eps_per_phase)
         env = LunarLanderEnv('DenseBaseline', 'off');
-        env.CurriculumWeights = double((1:numel(eps_per_phase)) == ph);
+        select_phase(env, ph);
         cap = p.phase_max_steps(ph);
 
         for k = 1:eps_per_phase(ph)
@@ -166,18 +166,3 @@ function eps_out = collect_corrections(agent, p, eps_per_phase, beta)
     end
 end
 
-
-function rates = phase_landing_rates(agent, p, n)
-    rates = zeros(1, numel(p.phase_max_steps));
-    for ph = 1:numel(rates)
-        env = LunarLanderEnv('DenseBaseline', 'on');
-        env.CurriculumWeights = double((1:numel(rates)) == ph);
-        rng(42);
-        landed = 0;
-        for k = 1:n
-            ep = rollout_episode(env, agent, max(p.phase_max_steps));
-            landed = landed + strcmp(ep.outcome, 'landed');
-        end
-        rates(ph) = landed / n;
-    end
-end
