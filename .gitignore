@@ -5,3 +5,9 @@
 
 # macOS Finder metadata
 .DS_Store
+
+# Compiled MEX and flight-code harness binaries (the C SOURCES are committed on purpose)
+*.mex*
+Lunar-Lander/flight-code/harness/sidecar_equivalence
+Lunar-Lander/flight-code/harness/sidecar_run
+Lunar-Lander/flight-code/harness/sidecar_bench
