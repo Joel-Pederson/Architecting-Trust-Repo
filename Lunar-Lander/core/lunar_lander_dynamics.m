@@ -68,9 +68,21 @@ function dxdt = lunar_lander_dynamics(x, u, params)
     % --- 4. Higher Fidelity Physics Extensions ---
     
     % 4a. Centrifugal Lift
-    % At orbital velocities, centrifugal force counteracts gravity. 
-    a_centrifugal = (dx^2) / (r_lunar + y_pos);
-    g_apparent = max(0, g - a_centrifugal); % Gravity cannot be effectively negative unless we exceed escape velocity, clamp at 0.
+    % At orbital velocities, centrifugal force counteracts gravity.
+    %
+    % NOTE ON THE COORDINATE FRAME. This makes the model CURVILINEAR, not Cartesian:
+    % y_pos is altitude above the surface and x_pos is downrange ARC LENGTH along it, with
+    % gravity always normal to the surface. That is the standard flat-Moon approximation
+    % used in descent guidance, and it is what makes a 410 km powered descent meaningful -
+    % in a true Cartesian frame the surface would curve 48 km away from the lander over
+    % that range, but here the surface is at y = 0 by construction.
+    r = r_lunar + y_pos;
+    a_centrifugal = (dx^2) / r;
+
+    % Inverse-square gravity rather than the surface value. 1.7% at PDI altitude - small,
+    % but free, and it removes a systematic bias from a 480 s braking burn.
+    g_local = g * (r_lunar / r)^2;
+    g_apparent = max(0, g_local - a_centrifugal); % Clamp: gravity cannot go negative below escape velocity.
     
     % 4b. Dynamic Moment of Inertia
     % The ship gets easier to spin as fuel is burned. Interpolate based on remaining fuel mass.
@@ -81,7 +93,11 @@ function dxdt = lunar_lander_dynamics(x, u, params)
     % F = ma --> a = F/m
     % X-axis: Main thrust pushing sideways based on tilt angle.
     % (If nose leans left (+theta), thrust points right. Nose leans right (-theta), thrust points left).
-    ddx = (-T_main * sin(theta)) / m_total;
+    % The curvilinear coupling term -2*dx*dy/r is the price of measuring x as arc length:
+    % as the vehicle descends, conservation of angular momentum changes its downrange
+    % rate. Worth ~0.06 m/s^2 against 3.52 m/s^2 of thrust at PDI (1.7%), the same order
+    % as the gravity correction above, and it is one term.
+    ddx = (-T_main * sin(theta)) / m_total - (2 * dx * dy) / r;
     
     % Y-axis: Main thrust pushing up, fighting apparent gravity.
     % Gravity is subtracted here, which is why params.gravity must be a positive magnitude.

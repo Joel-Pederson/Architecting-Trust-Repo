@@ -69,8 +69,14 @@ function testActionScalingAndIntegration(testCase)
     step(env, [-1; 1]);
 
     % One agent step advances control_decimation physics substeps, i.e. agent_dt, NOT dt.
-    % With the engine off, vertical acceleration is purely gravity.
-    expected_dy = -env.params.gravity * env.params.agent_dt;
+    % With the engine off, vertical acceleration is purely gravity - evaluated AT 2000 m,
+    % where inverse-square falloff makes it 0.23% below the surface value. The tolerance
+    % below is loose enough to absorb the altitude changing slightly across the five
+    % substeps, but far tighter than that 0.23%, so a regression to constant gravity
+    % would still fail.
+    p = env.params;
+    g_at_alt = p.gravity * (p.r_lunar / (p.r_lunar + 2000))^2;
+    expected_dy = -g_at_alt * p.agent_dt;
     verifyEqual(testCase, env.State(4), expected_dy, 'RelTol', 1e-4, ...
         'Action scaling failed to map -1 to 0 thrust, or the control decimation is desynced.');
 end
@@ -100,11 +106,13 @@ function testShapingIsAppliedOncePerAgentStepWithGamma(testCase)
     % Reconstruct the fuel term, which is the only other contribution on a non-terminal,
     % non-vetoed step. Thrust is decided once per agent step, so it is constant across
     % the substeps.
-    m_total  = p.dry_mass + x_before(7) + x_before(8);
-    u_thrust = max(0, min(m_total * p.gravity * (1 + action(1)), p.max_main_thrust));
-    u_torque = max(-p.max_side_torque, min(action(2) * p.max_side_torque, p.max_side_torque));
-    fuel = (w.fuel_main * abs(u_thrust) / p.max_main_thrust + ...
-            w.fuel_rcs  * abs(u_torque) / p.max_side_torque) * p.dt ...
+    % Go through action_to_command rather than restating the map. An earlier version of
+    % this test duplicated the formula, which made it a fourth copy of the control
+    % interface - and it silently went stale the moment the map was extended to reach
+    % full thrust for the powered-descent phase.
+    u = action_to_command(action, x_before, p);
+    fuel = (w.fuel_main * abs(u(1)) / p.max_main_thrust + ...
+            w.fuel_rcs  * abs(u(2)) / p.max_side_torque) * p.dt ...
            * p.control_decimation / w.reward_scale;
 
     expected_shaping = (shaping_potential(env.State, p, w) - phi0) / w.reward_scale;

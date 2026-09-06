@@ -37,7 +37,11 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
         % Probability of drawing each phase. Defaults to the training weights;
         % evaluate_policy overrides this with the uniform evaluation mix so that a
         % reweighted training diet cannot inflate the reported landing rate.
-        CurriculumWeights (1,3) double = [1/3 1/3 1/3]
+        % Variable length ON PURPOSE. A fixed (1,3) would reject every existing caller the
+        % moment a fourth phase was added - the fault study, the CI tests and the demos
+        % all pass [1 0 0] style selectors. Short vectors are zero-padded in reset, so
+        % [1 0 0] simply means "phase 1, never the powered descent".
+        CurriculumWeights (1,:) double = [1/3 1/3 1/3]
 
         % Whether the environment adds potential-based shaping on top of the reward
         % scheme's own terms. Set from the scheme in the constructor: 'SparseOnly' is a
@@ -110,7 +114,13 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             % Weighted draw over the three phases. Uses cumulative probabilities rather
             % than fixed 0.33/0.66 thresholds so the mix is configurable per environment
             % (training uses a P1-weighted diet, evaluation uses the uniform mix).
-            cw = this.CurriculumWeights / sum(this.CurriculumWeights);
+            % Zero-pad to the full phase count so a 3-element selector like [1 0 0]
+            % still means "phase 1", rather than silently indexing past the end.
+            n_phases = numel(this.params.phase_max_steps);
+            cw = zeros(1, n_phases);
+            w = this.CurriculumWeights;
+            cw(1:min(numel(w), n_phases)) = w(1:min(numel(w), n_phases));
+            cw = cw / sum(cw);
             phase_selector = rand();
 
             % Drift direction is randomised. Previously every episode began drifting to
@@ -140,7 +150,7 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
                 init_dtheta = randn() * 0.02;
                 this.Phase = 2;
 
-            else
+            elseif phase_selector < cw(1) + cw(2) + cw(3)
                 % Phase 3: High Altitude Terminal Descent (Hard)
                 % Agent starts at 2,500m falling at 25 m/s with 20 m/s drift.
                 init_x = randn() * 100;
@@ -150,6 +160,26 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
                 init_theta = randn() * 0.1;
                 init_dtheta = randn() * 0.05;
                 this.Phase = 3;
+
+            else
+                % Phase 4: Powered Descent Initiation (Apollo-style)
+                %
+                % 15.2 km altitude, ~1697 m/s horizontal, near-zero vertical rate at
+                % perilune - the point where autonomous descent actually begins. Starts
+                % 410 km SHORT of the pad and closes on it, so the drift sign is fixed:
+                % unlike phases 1-3 this is not a drift to be nulled, it is orbital
+                % velocity to be spent.
+                %
+                % Note the scale change. Downrange is 4000x that of Phase 3 and horizontal
+                % velocity is 85x, which is why the observation normalisers cannot serve
+                % both regimes on one linear scale.
+                init_x = -this.params.pdi_downrange + (randn() * 2000);
+                init_y = this.params.pdi_altitude + (randn() * 200);
+                init_dx = this.params.pdi_velocity + (randn() * 20);
+                init_dy = this.params.pdi_descent + (randn() * 1);
+                init_theta = randn() * 0.05;
+                init_dtheta = randn() * 0.01;
+                this.Phase = 4;
             end
 
             init_main_fuel = this.params.max_main_fuel;
@@ -345,7 +375,7 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
             % the task needs. Penalising the timeout directly leaves the fuel term free to
             % be an efficiency term.
             this.StepCount = this.StepCount + 1;
-            if ~IsDone && this.StepCount >= this.params.max_agent_steps
+            if ~IsDone && this.StepCount >= this.episode_step_cap()
                 IsDone = true;
                 this.Outcome = 'timeout';
                 Reward = Reward + (this.weights.timeout / this.weights.reward_scale);
@@ -362,6 +392,22 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
     end
 
     methods (Access = private)
+        function n = episode_step_cap(this)
+        % Episode budget for the phase currently being flown.
+        %
+        % A 50 m touchdown does not need the clock a 410 km powered descent does, and
+        % giving every phase the longest budget would make a full-length hover cost
+        % nearly as much as flying out of bounds - collapsing the ordering margin that
+        % reward_ordering_test exists to protect. Phases 1-3 keep exactly the budget they
+        % were measured under.
+            caps = this.params.phase_max_steps;
+            if this.Phase >= 1 && this.Phase <= numel(caps)
+                n = caps(this.Phase);
+            else
+                n = this.params.max_agent_steps;
+            end
+        end
+
         function norm_state = normalize_state(this, raw_state)
             % NORMALIZE_STATE: Uses the central get_ai_observation function so training
             % and deployment normalization are identical. params is passed explicitly -

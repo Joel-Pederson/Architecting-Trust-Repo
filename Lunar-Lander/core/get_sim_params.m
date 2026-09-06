@@ -24,7 +24,7 @@ function params = get_sim_params()
     % REFUSED on mismatch. Without that check, a hyperparameter set optimised against an
     % older harness silently overrides the current configuration - which is exactly what
     % happened with an Aug-2025 file whose Gamma had been tuned for a 0.02 s sample time.
-    params.harness_version = 7;
+    params.harness_version = 8;
 
     % Simulation Parameters
     params.dt = 0.02;                 % Physics integration step (50Hz) seconds per frame
@@ -43,6 +43,13 @@ function params = get_sim_params()
     % ambiguous once the agent and the physics run at different rates, and reusing it
     % silently truncated the standalone physics-rate simulation from 900 s to 60 s.
     params.max_agent_steps = 3000;    % RL episode cap: agent decisions (300 s at 10 Hz)
+
+    % PER-PHASE episode budget. A 50 m touchdown does not need the same clock as a
+    % powered descent from orbit, and giving every phase the longest budget would make a
+    % full-length hover cost nearly as much as flying out of bounds - collapsing the
+    % margin that reward_ordering_test exists to protect. Phases 1-3 keep exactly the
+    % budget they were measured under, so no existing result changes.
+    params.phase_max_steps = [3000, 3000, 3000, 9000];
     params.max_sim_steps   = 45000;   % Standalone main_simulation cap: physics steps (900 s at 50 Hz)
 
     % --- TOUCHDOWN CRITERIA (Single source of truth) ---
@@ -112,6 +119,18 @@ function params = get_sim_params()
     params.approach_max_miss = 10.0;   % cap on the summed normalised miss, so the
                                        % approach term can never exceed the terminal scale
 
+    % --- POWERED DESCENT INITIATION (PHASE 4) ---
+    % Apollo 11 PDI: 15.2 km altitude, ~1697 m/s horizontal, near-zero vertical rate at
+    % perilune. This is where autonomous descent actually begins; everything above it is
+    % orbital coast, which costs runtime without adding evidence about a runtime barrier.
+    %
+    % The vehicle can do it: 2963 m/s of delta-v available (Isp 294 s) against ~1900 m/s
+    % required, with a thrust-to-weight of 2.18 at PDI mass.
+    params.pdi_altitude   = 15200;    % m
+    params.pdi_downrange  = 410000;   % m - starts this far short of the pad, closing
+    params.pdi_velocity   = 1697;     % m/s horizontal
+    params.pdi_descent    = -3;       % m/s vertical at perilune
+
     % --- CURRICULUM WEIGHTING ---
     % Probability of drawing each difficulty phase [P1 50m, P2 500m, P3 2500m].
     %
@@ -140,7 +159,13 @@ function params = get_sim_params()
     % forces the critic to represent values spanning [-250, +10], which is precisely the
     % exploding-value problem the reward scaling exists to prevent. 20 km is still an
     % order of magnitude beyond any legitimate descent profile.
-    params.max_abs_x  = 20000;        % m - lateral boundary
-    params.max_alt    = 20000;        % m - ceiling
+    % --- FLIGHT BOX ---
+    % Sized for a full Apollo-style powered descent, not just a terminal approach.
+    % Braking 1700 m/s of horizontal velocity at ~3.5 m/s^2 takes about 480 s and covers
+    % roughly 410 km of downrange, so a 20 km lateral boundary would have triggered
+    % out-of-bounds within seconds of PDI. Enlarging it is harmless to the existing
+    % curriculum phases, which never travel more than a few hundred metres laterally.
+    params.max_abs_x  = 600000;       % m - lateral boundary (downrange arc length)
+    params.max_alt    = 30000;        % m - ceiling (PDI starts at 15.2 km)
 
 end

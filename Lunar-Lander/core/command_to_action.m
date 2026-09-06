@@ -27,9 +27,15 @@ function action = command_to_action(u_nominal, x, params)
 % See also ACTION_TO_COMMAND.
 
     m_total = params.dry_mass + x(7) + x(8);
-    hover_T = m_total * params.gravity;
+    hover_T = min(m_total * params.gravity, params.max_main_thrust);
 
-    a_thrust = u_nominal(1) / hover_T - 1;
+    % Inverse of the piecewise forward map: below hover the scale is hover_T, above it the
+    % remaining envelope up to T_max. See action_to_command for why it is asymmetric.
+    if u_nominal(1) <= hover_T
+        a_thrust = u_nominal(1) / hover_T - 1;
+    else
+        a_thrust = (u_nominal(1) - hover_T) / max(params.max_main_thrust - hover_T, eps);
+    end
     a_torque = u_nominal(2) / params.max_side_torque;
 
     action = [max(-1, min(a_thrust, 1)); ...
