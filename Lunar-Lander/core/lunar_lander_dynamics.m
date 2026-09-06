@@ -23,8 +23,8 @@ function dxdt = lunar_lander_dynamics(x, u, params)
     %   u(2) : Tau_side(RCS Side engine torque, Newton-meters)
     
     % --- 1. Unpack State ---
-    % Position is tracked for the environment, but not used to calculate derivatives
-    x_pos       = x(1); 
+    % x(1), downrange position, is tracked by the environment but is not an input to
+    % any derivative below, so it is deliberately not unpacked here.
     y_pos       = x(2); 
     dx          = x(3);
     dy          = x(4);

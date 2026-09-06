@@ -5,24 +5,10 @@ function [idx, label] = select_phase(env, scenario)
 %   select_phase(env, 3)            % terminal descent only
 %   [idx, label] = select_phase(env, 'approach')
 %
-% --- WHY THIS EXISTS ---
-% Nine call sites had each written their own version of the same one-hot:
-%
-%     env.CurriculumWeights = double((1:numel(p.phase_max_steps)) == phase);
-%
-% and two of them had hardcoded the phase count instead of reading it:
-%
-%     env.CurriculumWeights = double((1:3) == phase);          % <- stale
-%
-% That is not a style problem. When the powered descent was added as a fourth phase,
-% every hardcoded copy silently stopped being able to select it - and one of them was
-% run_fault_injection_study, which is the script the paper's central result comes from.
-% Asking for phase 4 there produced an all-zero weight vector, which the environment then
-% normalised by its own sum. The phase count now has exactly one source, params, and is
-% read rather than written down.
-%
-% Accepts everything core/phase_from_name accepts, so scenario names work here too and
-% callers do not have to resolve them first.
+% Nine call sites each wrote this one-hot themselves and two hardcoded `(1:3)`, so adding
+% the powered descent silently made it unselectable in run_fault_injection_study - the
+% script the paper's central result comes from. The phase count now has one source and is
+% read from params, not written down. Accepts anything phase_from_name accepts.
 %
 % Inputs:
 %   env      - LunarLanderEnv (handle object; mutated in place)

@@ -4,20 +4,14 @@ function stats = phase_landing_rates(agent, params, opts)
 %   stats = phase_landing_rates(agent, p)
 %   stats = phase_landing_rates(agent, p, struct('n_episodes', 30, 'guardian', 'off'))
 %
-% The single measurement this whole project selects on. Three near-identical copies of it
-% had accumulated - in train_pipeline, dagger_refine and evaluate_final_agent - which is
-% how the same experiment ends up quoted at two different sample sizes in two places.
+% The single measurement this project selects on. train_pipeline, dagger_refine and
+% evaluate_final_agent each carried a near-copy, which is how one experiment ends up
+% quoted at two sample sizes in two places.
 %
-% --- WHY PER PHASE AND NEVER POOLED ---
-% A Phase 4 powered descent runs ~8,900 agent steps against Phase 1's ~450. Pooling the
-% episodes hides which regime works and lets the long phase dominate anything averaged
-% over steps. Every number here is reported per phase, and callers that want a headline
-% take the mean of the rates rather than of the episodes.
-%
-% --- WHY THE SEED IS FIXED AND SHARED ---
-% Two arms of a comparison must face the same initial conditions or the comparison is
-% about the draw. Callers comparing guardian on against guardian off pass the same seed
-% for both, which is what makes "only the barrier differs" true.
+% Always PER PHASE, never pooled: a Phase 4 descent runs ~8,900 agent steps against Phase
+% 1's ~450, so pooling hides which regime works. The seed is applied per phase so two arms
+% of a comparison face identical initial conditions - what makes "only the barrier
+% differs" true.
 %
 % Inputs:
 %   agent  - anything rollout_episode accepts (a trained agent)

@@ -2,8 +2,8 @@
  * rtwtypes.h - portable replacement, written by flight-code/generate_flight_code.m.
  *
  * MATLAB Coder's own rtwtypes.h ends in #include "tmwtypes.h", a MathWorks header
- * that lives outside this repository. The generated barrier uses only real_T,
- * boolean_T and int32_T, so they are defined here from <stdint.h> instead. That is what
+ * that lives outside this repository. Generation uses plain C built-in types, so the
+ * barrier itself needs only boolean_T; the other two are defined for completeness. That
  * lets a reader with a C compiler and no MATLAB licence build and audit this code.
  *
  * Regenerate with: generate_flight_code

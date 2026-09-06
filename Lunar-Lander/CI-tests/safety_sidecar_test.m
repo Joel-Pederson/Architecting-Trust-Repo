@@ -1,4 +1,4 @@
-function tests = test_safety_sidecar
+function tests = safety_sidecar_test
 %TEST_SAFETY_SIDECAR - Unit tests for the safety_sidecar_filter wrapper
 %
 % This test harness constructs function-based tests for safety_sidecar_filter.

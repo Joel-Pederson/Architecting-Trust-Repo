@@ -15,23 +15,18 @@ function results = train_pipeline(opts)
 %     all four curriculum phases and record every (state, action) pair it produced.
 %
 %   2 CLONE        pretrain_actor_supervised x N     -> cloned_agent_4phase.mat
-%     Fit N independently initialised TD3 actors to that dataset by regression and keep
-%     the one that actually FLIES best. Selection is on closed-loop landing rate, never on
-%     validation loss: across candidates the correlation between the two was -0.021, and
-%     an epoch sweep had RMSE falling monotonically 0.184 -> 0.107 while landing rate
-%     bounced 43/10/57/47/3/20 percent. Regression error selects a policy that hovers.
+%     Fit N independently initialised TD3 actors and keep the one that FLIES best.
+%     Selection is on closed-loop landing rate, never validation loss.
 %
 %   3 DAGGER       dagger_refine                     -> dagger_corpus.mat
-%     The clone from stage 2 lands the short phases but not the powered descent, because
-%     cloning only fits the expert's own trajectory and an 8900-step descent leaves it far
-%     off that trajectory long before touchdown. DAgger rolls out the CLONE and labels the
-%     states it actually reaches with what the EXPERT would have done there.
+%     Roll out the CLONE, label the states it reaches with what the EXPERT would do there.
 %
 %   4 SELECT       two-stage screen and verify       -> cloned_agent_4phase.mat
-%     Re-clone from the aggregated DAgger corpus and pick a winner. Screening 8 candidates
-%     at n=8 and taking the maximum is the winner's curse, and it bit here: a clone that
-%     screened at 88% on Phase 4 scored 33% when re-measured at n=30. So screen wide and
-%     cheap, then RE-MEASURE a shortlist on fresh seeds and select on that.
+%     Re-clone from the aggregated corpus, screen wide and cheap, then RE-MEASURE a
+%     shortlist on fresh seeds. Taking the max of one noisy screen is the winner's curse.
+%
+% README.md, "Why the pipeline has this shape", carries the measurement behind each of
+% those choices.
 %
 % Stage 2 overwrites cloned_agent_4phase.mat with a seed clone; stage 4 overwrites it
 % again with the finished agent. Running stages 3:4 alone therefore requires a stage-2

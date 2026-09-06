@@ -5,7 +5,7 @@
  * File: safety_sidecar_filter.h
  *
  * MATLAB Coder version            : 25.1
- * C/C++ source code generated on  : 06-Sep-2026 18:40:17
+ * C/C++ source code generated on  : 06-Sep-2026 19:16:29
  */
 
 #ifndef SAFETY_SIDECAR_FILTER_H
@@ -21,9 +21,9 @@ extern "C" {
 #endif
 
 /* Function Declarations */
-extern void safety_sidecar_filter(const real_T x[8], const real_T u_nominal[2],
-                                  real_T u_actual[2], boolean_T *VetoTriggered,
-                                  real_T *h_alt, real_T *h_fuel);
+extern void safety_sidecar_filter(const double x[8], const double u_nominal[2],
+                                  double u_actual[2], boolean_T *VetoTriggered,
+                                  double *h_alt, double *h_fuel);
 
 #ifdef __cplusplus
 }

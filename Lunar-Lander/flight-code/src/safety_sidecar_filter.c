@@ -5,7 +5,7 @@
  * File: safety_sidecar_filter.c
  *
  * MATLAB Coder version            : 25.1
- * C/C++ source code generated on  : 06-Sep-2026 18:40:17
+ * C/C++ source code generated on  : 06-Sep-2026 19:16:29
  */
 
 /* Include Files */
@@ -33,32 +33,32 @@
  *  If the AI's request is safe, it passes through untouched. If the request is
  * lethal, the Sidecar vetoes it and injects an emergency survival command.
  *
- * Arguments    : const real_T x[8]
- *                const real_T u_nominal[2]
- *                real_T u_actual[2]
+ * Arguments    : const double x[8]
+ *                const double u_nominal[2]
+ *                double u_actual[2]
  *                boolean_T *VetoTriggered
- *                real_T *h_alt
- *                real_T *h_fuel
+ *                double *h_alt
+ *                double *h_fuel
  * Return Type  : void
  */
-void safety_sidecar_filter(const real_T x[8], const real_T u_nominal[2],
-                           real_T u_actual[2], boolean_T *VetoTriggered,
-                           real_T *h_alt, real_T *h_fuel)
+void safety_sidecar_filter(const double x[8], const double u_nominal[2],
+                           double u_actual[2], boolean_T *VetoTriggered,
+                           double *h_alt, double *h_fuel)
 {
-  real_T a_max;
-  real_T b_x;
-  real_T blending_zone;
-  real_T d;
-  real_T drop_slew;
-  real_T dy_after;
-  real_T g_apparent;
-  real_T h_alt_now_tmp_tmp;
-  real_T m_total;
-  real_T margin;
-  real_T t_slew;
-  real_T t_slew_tmp;
-  real_T theta;
-  int32_T y;
+  double a_max;
+  double b_x;
+  double blending_zone;
+  double d;
+  double drop_slew;
+  double dy_after;
+  double g_apparent;
+  double h_alt_now_tmp_tmp;
+  double m_total;
+  double margin;
+  double t_slew;
+  double t_slew_tmp;
+  double theta;
+  int y;
   /*  --- 1. UNPACK STATE & PARAMETERS --- */
   /*  The sidecar evaluates the exact physical reality of the craft at this
    * exact millisecond. */

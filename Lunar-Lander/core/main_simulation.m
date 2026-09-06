@@ -47,7 +47,6 @@ function main_simulation(CONTROL_MODE, agent_mat_file, USE_SIDECAR)
 % Scenario: High Altitude Terminal Descent (Final Approach)
 % Set Initial State: LEM at 2,500m altitude descending at -25 m/s with 20 m/s horizontal drift
 x_current = [0; 2500; 20; -25; 0; 0; 8200; 300];
-u_prev = [0; 0];
 
 % --- 4. Telemetry Logging Arrays ---
 history_time   = zeros(1, max_steps);
@@ -109,7 +108,9 @@ for step = 1:max_steps
     % B. The Action Governor (Safety Filter)
     % Intercepts the AI's command and evaluates it against reality if enabled
     if USE_SIDECAR
-        [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x_current, u_nominal, params);
+        % Margins h_alt/h_fuel are returned but not logged by this bench; the study
+        % scripts are where they are recorded.
+        [u_actual, VetoTriggered] = safety_sidecar_filter(x_current, u_nominal, params);
     else
         u_actual = u_nominal;
         VetoTriggered = false;
@@ -144,7 +145,6 @@ for step = 1:max_steps
     
     % F. Update State for the Next Microsecond
     x_current = x_next;
-    u_prev = u_actual;
     
     % Terminal Condition Check
     if IsDone

@@ -90,7 +90,7 @@ end
 function s = escape_data(s)
     s = strrep(s, '%',  '%25');
     s = strrep(s, sprintf('\r'), '%0D');
-    s = strrep(s, sprintf('\n'), '%0A');
+    s = strrep(s, newline, '%0A');
 end
 
 

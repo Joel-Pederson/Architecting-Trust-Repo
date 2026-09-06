@@ -5,7 +5,7 @@
  * File: safety_sidecar_filter_terminate.c
  *
  * MATLAB Coder version            : 25.1
- * C/C++ source code generated on  : 06-Sep-2026 18:40:17
+ * C/C++ source code generated on  : 06-Sep-2026 19:16:29
  */
 
 /* Include Files */

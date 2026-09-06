@@ -10,20 +10,13 @@ function weights = get_reward_weights()
     weights.success =  500;   % -> +5.0  scaled
     weights.oob     = -900;   % ->  -9.0  scaled, and deliberately the worst outcome
     %
-    % WHY THE CRASH RANGE IS WIDER THAN THE LANDING BONUS. The penalty has to grade
-    % failure across roughly 40 m/s of impact speed while keeping a steep slope in the
-    % last 4 m/s, where the landing is actually decided. Those two demands do not both
-    % fit in a range of 5.0: giving the near band the slope it needs (about 3.4 over
-    % 1x-4x the gate) leaves under 0.35 for everything beyond 4x, which is what produced
-    % the measured -0.02 reward for braking Phase 3 from 25 to 19 m/s. Widening the range
-    % to 8.0 buys both.
+    % The crash range is wider than the landing bonus because it must grade failure over
+    % ~40 m/s of impact while keeping a steep slope in the last 4 m/s, where the landing
+    % is decided. A range of 5.0 cannot do both: it left under 0.35 for everything beyond
+    % 4x the gate, which is why braking Phase 3 from 25 to 19 m/s once scored -0.02.
     %
-    % Asymmetry against the +5.0 landing bonus is appropriate rather than awkward for a
-    % safety argument: crashing a lander is much worse than landing it is good.
-    %
-    % oob is raised in step so that flying out of the box stays strictly worse than any
-    % crash. Otherwise a 25 m/s impact (-6.05) would beat the old -5.0 oob penalty and
-    % escaping the flight box would become a way to dodge a bad landing.
+    % oob is worse than any crash on purpose - otherwise leaving the flight box becomes a
+    % way to dodge a bad landing.
 
     % --- SHAPE OF THE CRASH PENALTY ---
     % Three bands, because no single saturating term covers the whole range. Measured with
@@ -48,13 +41,11 @@ function weights = get_reward_weights()
     % --- SIDECAR VETO PENALTY ---
     % Charged ONCE per engagement (on the rising edge), NOT once per timestep.
     %
-    % This distinction is the difference between a working reward and a suicidal one.
-    % As a per-step charge at 50 Hz, -10 raw meant -5.0 reward per SECOND of guardian
-    % activity, while the worst possible crash cost only -7.5. Deliberately crashing
-    % became the optimal policy after 1.5 seconds of vetoed flight, and since the
-    % guardian was engaged for the whole descent the agent could not avoid the tax by
-    % flying well. Per-engagement pricing keeps the intended lesson - "the boundary is
-    % expensive, stay away from it" - without making survival cost more than dying.
+    % The difference between a working reward and a suicidal one. Charged per STEP at
+    % 50 Hz, -10 raw meant -5.0 per second of guardian activity against a worst crash of
+    % -7.5, so deliberately crashing became optimal after 1.5 s of vetoed flight. Per
+    % engagement keeps the lesson - the boundary is expensive - without making survival
+    % cost more than dying.
     weights.sidecar_veto = -10;   % -> -0.1 scaled, per engagement
 
     % Hard ceiling on the TOTAL veto penalty an episode can accrue.
