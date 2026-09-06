@@ -135,7 +135,27 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
               'Callback', @(~,~) run_replay());
 
     is_animating = false;
-    skip_frames = 2; 
+
+    % Playback pacing, derived from the data rather than fixed.
+    %
+    % skip_frames was hardcoded to 2, which suited telemetry logged at the 50 Hz PHYSICS
+    % rate: a 900 s run is 45,000 samples, so every second frame still gave a long
+    % animation. Episodes rolled at the 10 Hz AGENT rate are ~300 samples for a 30 s
+    % flight, and at skip 2 that renders in a fraction of a second - the figure appears
+    % already finished and REPLAY looks like it does nothing.
+    %
+    % Render a bounded number of frames spread over a fixed wall-clock duration, so
+    % playback looks the same whether the source is 300 samples or 45,000.
+    % TARGET_DURATION sets the PAUSE budget, not the total: rendering costs roughly as
+    % much again, so a 5 s budget plays back in about 10-13 s. Measured on both a 179
+    % frame Phase 1 landing and a 1706 frame Phase 3 descent, which is the point - the
+    % two now take a comparable time to watch despite a 10x difference in sample count.
+    TARGET_FRAMES   = 300;    % upper bound on rendered frames
+    TARGET_DURATION = 5.0;    % seconds of PAUSE spread across the replay
+
+    skip_frames = max(1, round(numel(t) / TARGET_FRAMES));
+    n_rendered  = numel(1:skip_frames:numel(t));
+    frame_pause = TARGET_DURATION / max(1, n_rendered);
     
     % Run animation once automatically on launch
     run_replay();
@@ -146,7 +166,13 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
             return; % Prevent overlapping animation loops if clicked while running
         end
         is_animating = true;
-        
+        % Guarantee the flag is cleared even if the loop below throws. Without this, one
+        % error anywhere in the render path leaves is_animating stuck true, and every
+        % subsequent REPLAY click returns immediately at the guard above - the button
+        % appears dead for the life of the figure, with no error shown, which is a very
+        % confusing thing to debug.
+        reset_flag = onCleanup(@() set_animating(false));
+
         % Reset trailing paths and status for replay
         if isvalid(ax_global) && isvalid(ax_phase)
             trail_line.XData = x(1);
@@ -192,8 +218,17 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
             b_coords = R * [body_x; body_y];
             n_coords = R * [nozzle_x; nozzle_y];
             
-            global_scale = 50; 
-            
+            % Scale the glyph to the VIEW, not by a fixed factor.
+            %
+            % This was a hardcoded 50x. The lander body is 7 m wide, so it was drawn
+            % 350 m wide whatever the global view happened to span - roughly a seventh of
+            % a 2500 m Phase 3 plot, and wider than the entire flight envelope of a 50 m
+            % Phase 1 one. The magnification is only there because a true-to-scale lander
+            % is invisible at descent altitudes, so it should track the axes: the glyph
+            % now always occupies about 5% of the visible height.
+            global_span  = diff(ylim(ax_global));
+            global_scale = max(1, (0.05 * global_span) / H);
+
             % Global View patches
             body_patch_g.XData = (b_coords(1,:) * global_scale) + curr_x;
             body_patch_g.YData = (b_coords(2,:) * global_scale) + curr_y;
@@ -305,8 +340,16 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
                 t(i), curr_y, curr_x, rad2deg(curr_theta));
             txt_telemetry.String = telemetry_str;
             
-            drawnow limitrate;
+            % Plain drawnow, not limitrate: limitrate DROPS frames to keep up, which on a
+            % short agent-rate episode discards most of the animation. The pause sets the
+            % pace instead.
+            drawnow;
+            pause(frame_pause);
         end
         is_animating = false;
+    end
+
+    function set_animating(tf)
+        is_animating = tf;
     end
 end
