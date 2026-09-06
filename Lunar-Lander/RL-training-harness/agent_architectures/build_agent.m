@@ -1,4 +1,4 @@
-function agent = build_agent(agent_type, obsInfo, actInfo, dt, hyperparams)
+function agent = build_agent(agent_type, obsInfo, actInfo, dt, hyperparams, hidden_size)
 % BUILD_AGENT Dispatcher for the modular agent architectures.
 %
 % Single entry point so callers never need to know which builder exists. Adding a new
@@ -21,11 +21,15 @@ function agent = build_agent(agent_type, obsInfo, actInfo, dt, hyperparams)
         hyperparams = [];
     end
 
+    if nargin < 6
+        hidden_size = [];   % default capacity, set in build_shared_networks
+    end
+
     switch lower(agent_type)
         case 'ddpg'
             agent = build_ddpg_agent(obsInfo, actInfo, dt, hyperparams);
         case 'td3'
-            agent = build_td3_agent(obsInfo, actInfo, dt, hyperparams);
+            agent = build_td3_agent(obsInfo, actInfo, dt, hyperparams, hidden_size);
         case 'sac'
             agent = build_sac_agent(obsInfo, actInfo, dt, hyperparams);
         case 'ppo'

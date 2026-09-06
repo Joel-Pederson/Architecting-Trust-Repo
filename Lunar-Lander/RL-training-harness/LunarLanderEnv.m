@@ -177,7 +177,7 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
                 init_y = this.params.pdi_altitude + (randn() * 200);
                 init_dx = this.params.pdi_velocity + (randn() * 20);
                 init_dy = this.params.pdi_descent + (randn() * 1);
-                init_theta = randn() * 0.05;
+                init_theta = this.params.pdi_pitch + randn() * 0.05;
                 init_dtheta = randn() * 0.01;
                 this.Phase = 4;
             end

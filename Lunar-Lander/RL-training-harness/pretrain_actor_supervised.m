@@ -27,7 +27,7 @@ function [agent, info] = pretrain_actor_supervised(agent, demos, params, opts)
 %   demos  - output of generate_demonstrations, or a path to demonstrations.mat
 %   params - get_sim_params
 %   opts   - (Optional) struct: .max_epochs (60), .mini_batch (256), .learn_rate (1e-3),
-%            .val_frac (0.1), .verbose (true)
+%            .val_frac (0.1), .verbose (true), .balance_phases (true)
 %
 % Outputs:
 %   agent - same handle, actor replaced with the fitted network
@@ -39,6 +39,7 @@ function [agent, info] = pretrain_actor_supervised(agent, demos, params, opts)
     if ~isfield(opts,'learn_rate'), opts.learn_rate = 1e-3; end
     if ~isfield(opts,'val_frac'),   opts.val_frac   = 0.1;  end
     if ~isfield(opts,'verbose'),    opts.verbose    = true; end
+    if ~isfield(opts,'balance_phases'), opts.balance_phases = true; end
 
     if ischar(demos) || isstring(demos)
         loaded = load(demos, 'demos');
@@ -59,6 +60,7 @@ function [agent, info] = pretrain_actor_supervised(agent, demos, params, opts)
     n_total = sum(arrayfun(@(e) size(e.actions, 2), demos.episodes));
     X = zeros(n_total, numel(get_ai_observation(demos.episodes(1).states(:,1), params)));
     T = zeros(n_total, 2);
+    P = zeros(n_total, 1);          % phase of each sample, for balancing
     k = 0;
     for i = 1:numel(demos.episodes)
         e = demos.episodes(i);
@@ -66,6 +68,41 @@ function [agent, info] = pretrain_actor_supervised(agent, demos, params, opts)
             k = k + 1;
             X(k,:) = get_ai_observation(e.states(:,t), params)';
             T(k,:) = e.actions(:,t)';
+            P(k)   = e.phase;
+        end
+    end
+
+    % --- PHASE BALANCING ---
+    % Episode LENGTH varies by two orders of magnitude across the curriculum, so equal
+    % episode counts produce wildly unequal sample counts: measured on the four-phase set,
+    % Phase 1 is 7.0% of transitions and Phase 4 is 40.8%. MSE weights every sample
+    % equally, so the fit is dominated by long cruise and braking segments while the
+    % terminal manoeuvre - the part the touchdown gate actually measures - is a rounding
+    % error in the loss.
+    %
+    % That is the most likely explanation for the previous clone scoring 45% on Phase 1
+    % against 100% and 86% on Phases 2 and 3: its WORST regime was the easiest one, which
+    % only makes sense if it barely trained on it.
+    %
+    % Resample each phase to the mean count so every regime carries equal weight.
+    if opts.balance_phases
+        phases = unique(P(P > 0))';
+        counts = arrayfun(@(q) nnz(P == q), phases);
+        target = round(mean(counts));
+        rng(11);
+        idx = [];
+        for q = phases
+            pool = find(P == q);
+            % With replacement only where a phase is short of target.
+            take = pool(randi(numel(pool), target, 1));
+            idx = [idx; take]; %#ok<AGROW>
+        end
+        X = X(idx, :);
+        T = T(idx, :);
+        n_total = numel(idx);
+        if opts.verbose
+            fprintf('  phase-balanced: %d samples, %d per phase (was %s)\n', ...
+                n_total, target, mat2str(counts));
         end
     end
 

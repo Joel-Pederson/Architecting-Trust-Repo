@@ -1,4 +1,4 @@
-function nets = build_shared_networks(obsInfo, actInfo)
+function nets = build_shared_networks(obsInfo, actInfo, hidden_size)
 % BUILD_SHARED_NETWORKS Common actor/critic topologies for every agent architecture.
 %
 % Every builder in agent_architectures/ draws its networks from here so the trade study
@@ -30,7 +30,15 @@ function nets = build_shared_networks(obsInfo, actInfo)
     nObs = obsInfo.Dimension(1);
     nAct = actInfo.Dimension(1);
 
-    hidden = 256;   % Width shared by every architecture in the trade study
+    % Capacity is now an argument. The four-phase curriculum spans a 50 m touchdown and a
+    % 550 km powered descent, and at 256 units different random initialisations
+    % specialised in different regimes - one clone scoring 100/100/75/12 across the phases
+    % and another 50/0/0/38. That split across inits is the signature of a network being
+    % asked to hold more regimes than it comfortably fits.
+    if nargin < 3 || isempty(hidden_size)
+        hidden_size = 256;      % unchanged default: existing callers are unaffected
+    end
+    hidden = hidden_size;   % Width shared by every architecture in the trade study
 
     % --- Q-VALUE CRITIC: Q(s, a) -> scalar ---
     nets.qCritic  = make_q_critic(nObs, nAct, hidden);

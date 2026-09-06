@@ -20,22 +20,39 @@ function testReset(testCase)
     verifyEqual(testCase, numel(InitialObservation), 10, ...
         'Observation space should have 10 variables.');
 
-    % Unscale using the SAME constants get_ai_observation normalizes with. Hard-coding a
-    % second, different set of constants here is exactly how the visualizer ended up
-    % rendering altitudes 6.7x too large.
-    unscaled_y = InitialObservation(2) * 3000;
-    is_valid_alt = (unscaled_y > 30   && unscaled_y < 70) || ...    % Phase 1: ~50 m
-                   (unscaled_y > 420  && unscaled_y < 580) || ...   % Phase 2: ~500 m
-                   (unscaled_y > 2300 && unscaled_y < 2700);        % Phase 3: ~2500 m
+    % Assert against the TRUE state, not an unscaled observation. This test used to
+    % hand-unscale with `* 3000` and `* 100` while carrying a comment warning against
+    % hard-coding a second set of normalisation constants - which is precisely what that
+    % was, and it went stale the moment the normaliser became logarithmic. The true state
+    % is unambiguous and needs no constants at all.
+    y0 = env.State(2);
+    is_valid_alt = (y0 > 30    && y0 < 70)    || ...    % Phase 1: ~50 m
+                   (y0 > 420   && y0 < 580)   || ...    % Phase 2: ~500 m
+                   (y0 > 2300  && y0 < 2700)  || ...    % Phase 3: ~2500 m
+                   (y0 > 14400 && y0 < 16000);          % Phase 4: PDI, ~15.2 km
     verifyTrue(testCase, is_valid_alt, ...
-        sprintf('Initial altitude %.1f m matches no curriculum phase.', unscaled_y));
+        sprintf('Initial altitude %.1f m matches no curriculum phase.', y0));
 
-    unscaled_dx = InitialObservation(3) * 100;
-    is_valid_vel = (abs(unscaled_dx) < 10) || ...                   % Phase 1
-                   (abs(unscaled_dx) > 3 && abs(unscaled_dx) < 20) || ...  % Phase 2: ~10
-                   (abs(unscaled_dx) > 5 && abs(unscaled_dx) < 40);        % Phase 3: ~20
+    dx0 = abs(env.State(3));
+    is_valid_vel = (dx0 < 10) || ...                    % Phase 1
+                   (dx0 > 3   && dx0 < 20)   || ...     % Phase 2: ~10
+                   (dx0 > 5   && dx0 < 40)   || ...     % Phase 3: ~20
+                   (dx0 > 1600 && dx0 < 1800);          % Phase 4: orbital, ~1697
     verifyTrue(testCase, is_valid_vel, ...
-        sprintf('Initial horizontal velocity %.1f m/s matches no curriculum phase.', unscaled_dx));
+        sprintf('Initial horizontal velocity %.1f m/s matches no curriculum phase.', dx0));
+
+    % The observation must remain a FAITHFUL, order-preserving encoding of that state -
+    % which is the property the unscaling was really trying to check, expressed without
+    % duplicating the normaliser.
+    p = env.params;
+    base = [0; 100; 0; -5; 0; 0; p.max_main_fuel; p.max_rcs_fuel];
+    higher = base; higher(2) = 200;
+    o_lo = get_ai_observation(base, p);
+    o_hi = get_ai_observation(higher, p);
+    verifyGreaterThan(testCase, o_hi(2), o_lo(2), ...
+        'Altitude channel is not monotonic in altitude.');
+    verifyLessThanOrEqual(testCase, max(abs(o_lo)), 1 + 1e-9, ...
+        'Observation left the [-1, 1] range inside the normal flight envelope.');
 
     % Fuel starts full, from the central params rather than a literal
     verifyEqual(testCase, env.State(7), params.max_main_fuel, 'RelTol', 1e-9);

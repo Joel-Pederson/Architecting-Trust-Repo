@@ -49,7 +49,13 @@ function params = get_sim_params()
     % full-length hover cost nearly as much as flying out of bounds - collapsing the
     % margin that reward_ordering_test exists to protect. Phases 1-3 keep exactly the
     % budget they were measured under, so no existing result changes.
-    params.phase_max_steps = [3000, 3000, 3000, 9000];
+    % Phase 4 raised from 9000 after softening the demonstrator's attitude gains. The RCS
+    % delivers 0.033 rad/s^2 against the vehicle's inertia, so a 90 degree slew is
+    % torque-limited no matter how it is commanded - a controller smooth enough to be
+    % fitted by regression is necessarily slower than one that slams between the stops,
+    % and the budget has to cover it. Measured: 8163 steps with the stiff gains, timing
+    % out at 9000 with the smooth ones while still doing 270 m/s.
+    params.phase_max_steps = [3000, 3000, 3000, 13000];
     params.max_sim_steps   = 45000;   % Standalone main_simulation cap: physics steps (900 s at 50 Hz)
 
     % --- TOUCHDOWN CRITERIA (Single source of truth) ---
@@ -127,9 +133,28 @@ function params = get_sim_params()
     % The vehicle can do it: 2963 m/s of delta-v available (Isp 294 s) against ~1900 m/s
     % required, with a thrust-to-weight of 2.18 at PDI mass.
     params.pdi_altitude   = 15200;    % m
-    params.pdi_downrange  = 410000;   % m - starts this far short of the pad, closing
+    params.pdi_downrange  = 550000;   % m - starts this far short of the pad, closing
+                                      %
+                                      % SIZED FROM THE VEHICLE, not chosen. Braking
+                                      % authority falls through the burn as gravity
+                                      % reasserts - 3.52 m/s^2 while weightless at PDI,
+                                      % 3.14 near the surface - so the average is ~3.3 and
+                                      % the ideal stopping distance is 1697^2/(2*3.3) =
+                                      % 436 km. Flying the profile at 85% of available
+                                      % thrust, plus slew and cosine losses, puts the real
+                                      % requirement near 500 km.
+                                      %
+                                      % 410 km was exactly marginal and 460 km still
+                                      % overshot by 200 km. Apollo's own PDI was ~480 km
+                                      % downrange at the same velocity, which is the
+                                      % check that this is the vehicle's number rather
+                                      % than a fudge.
     params.pdi_velocity   = 1697;     % m/s horizontal
     params.pdi_descent    = -3;       % m/s vertical at perilune
+    params.pdi_pitch      = 1.50;     % rad - ALREADY pitched retrograde at PDI, as the
+                                      % LM was. Starting upright costs ~20 s of slew at
+                                      % 1697 m/s, i.e. ~40 km of downrange, on a profile
+                                      % with no margin to give.
 
     % --- CURRICULUM WEIGHTING ---
     % Probability of drawing each difficulty phase [P1 50m, P2 500m, P3 2500m].
