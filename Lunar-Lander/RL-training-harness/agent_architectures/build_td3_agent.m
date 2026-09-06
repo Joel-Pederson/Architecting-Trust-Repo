@@ -1,4 +1,4 @@
-function agent = build_td3_agent(obsInfo, actInfo, dt, hyperparams)
+function agent = build_td3_agent(obsInfo, actInfo, dt, hyperparams, hidden_size)
 % BUILD_TD3_AGENT Twin Delayed Deep Deterministic policy gradient agent.
 %
 % TD3 is DDPG with three corrections, all of which matter for this problem:
@@ -24,7 +24,8 @@ function agent = build_td3_agent(obsInfo, actInfo, dt, hyperparams)
         hyperparams = load_hyperparams('td3');
     end
 
-    nets = build_shared_networks(obsInfo, actInfo);
+    if nargin < 5, hidden_size = []; end
+    nets = build_shared_networks(obsInfo, actInfo, hidden_size);
 
     % --- 1. Twin Critics ---
     % Both must be built from independently initialised networks. Handing TD3 two copies

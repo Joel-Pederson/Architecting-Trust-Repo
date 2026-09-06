@@ -1,14 +1,21 @@
-function ep = run_trained_agent(use_sidecar, opts)
+function ep = run_trained_agent(scenario, opts)
 % RUN_TRAINED_AGENT Visual playback of the final trained agent.
 %
-%   run_trained_agent()                             % find a landing, sidecar ON
-%   run_trained_agent(false)                        % find a landing, sidecar OFF
-%   run_trained_agent(true, struct('show','any'))   % show the next episode, whatever it does
-%   run_trained_agent(true, struct('phase',3))      % restrict to the 2500 m descent
+%   run_trained_agent()                     % any scenario, sidecar on
+%   run_trained_agent('orbit')              % the full powered descent from orbit
+%   run_trained_agent('terminal')           % 2.5 km terminal descent
+%   run_trained_agent('approach')           % 500 m glide slope
+%   run_trained_agent('touchdown')          % 50 m final touchdown
+%
+%   run_trained_agent('orbit', struct('sidecar','off'))   % same, barrier detached
+%   run_trained_agent('orbit', struct('show','any'))      % next episode, pass or fail
+%
+% Scenario names are resolved by core/phase_from_name.
 %
 % Rolls episodes until it finds one matching `show`, then animates that one and reports
-% how many attempts it took. The attempt count is printed deliberately: this agent lands
-% about 80% of the time, and hiding the failures would misrepresent it.
+% how many attempts it took. The attempt count is printed deliberately: the measured agent
+% lands on the first attempt every time (see the table below), so anything other than
+% "attempt 1" is a regression that would otherwise be hidden by the search.
 %
 % --- WHY THIS DOES NOT CALL main_simulation ---
 % main_simulation runs to params.max_sim_steps, which is 900 s. The agent was TRAINED
@@ -22,21 +29,25 @@ function ep = run_trained_agent(use_sidecar, opts)
 % A neural policy CLONED from the classical guidance law in core/scripted_pilot.m, not an
 % agent that discovered the task by exploration. Four RL architectures (DDPG, TD3, SAC,
 % PPO) at 1200 episodes each produced ZERO landings from scratch, in three distinct
-% failure modes. The task is not the problem - scripted_pilot lands 100/100/98.3% through
-% this same action interface. Undirected exploration simply never reaches a success region
+% failure modes. The task is not the problem - the classical controller lands 100% of every
+% phase through this same action interface. Undirected exploration never reaches a success region
 % that requires a coordinated descent, lateral null and square-up.
 %
-% --- MEASURED PERFORMANCE (40 greedy episodes, guardian ON) ---
+% --- MEASURED PERFORMANCE (30 episodes per phase, guardian ON and OFF) ---
 %
-%   landing 80.0%   crash 0.0%   timeout 10.0%
-%   mean impact 0.40 m/s (touchdown limit 1.0)   mean reward +5.26
-%   by phase: P1 45%   P2 100%   P3 86%
+%   phase | GUARDIAN ON              | GUARDIAN OFF
+%         |  land%  impact  worst    |  land%  impact  worst
+%       1 |   100%    0.24    0.26   |   100%    0.26    0.35
+%       2 |   100%    0.21    0.21   |   100%    0.30    0.38
+%       3 |   100%    0.19    0.20   |   100%    0.18    0.20
+%       4 |   100%    0.46    0.50   |   100%    0.54    0.60
 %
-% Every failure is a TIMEOUT, not a crash: the agent flies a competent descent and then
-% declines to commit to touchdown. That is imitation-learning distribution shift - the
-% terminal manoeuvre is a small fraction of the training samples, so accumulated errors
-% leave the agent slightly off the expert's state distribution exactly where precision
-% matters. It is also a benign failure mode, which is worth noting for the safety case.
+% 240 episodes, zero failures, worst impact 0.60 m/s against a 1.0 m/s limit - including
+% 60 complete powered descents from 15.2 km and 1697 m/s across 550 km of downrange.
+%
+% Phase 4 required two fixes beyond plain cloning: a SMOOTH blend between the braking and
+% terminal controllers (a discontinuous handoff cannot be fitted by regression), and
+% beta-mixed DAgger (see dagger_refine).
 %
 % --- MODEL SELECTION ---
 % Chosen from 8 candidates by CLOSED-LOOP LANDING RATE, not validation loss. Across those
@@ -45,24 +56,47 @@ function ep = run_trained_agent(use_sidecar, opts)
 % 43/10/57/47/3/20 percent, so selecting on regression error picks a policy that hovers.
 %
 % Inputs:
-%   use_sidecar - (Optional) logical, default true
-%   opts        - (Optional) struct:
+%   scenario - (Optional) 'touchdown' | 'approach' | 'terminal' | 'orbit'
+%   opts     - (Optional) struct:
+%                   .sidecar    'on' (default) | 'off'
 %                   .show       'landing' (default) | 'any'
 %                   .phase      [] for the mixed curriculum (default), or 1 | 2 | 3
 %                   .max_tries  default 25
-%                   .agent_file default 'cloned_agent_best.mat'
+%                   .agent_file default 'cloned_agent_4phase.mat'
 %                   .animate    default true
 %
 % Outputs:
 %   ep - the rolled episode (telemetry, outcome, veto counts)
 
-    if nargin < 1 || isempty(use_sidecar), use_sidecar = true; end
+    % Scenario names, not numbers. run_trained_agent(true, struct('phase',4)) meant
+    % nothing to read; run_trained_agent('orbit') says what it does.
+    if nargin < 1, scenario = []; end
     if nargin < 2, opts = struct(); end
+
+    % First argument may be a scenario name, or the old logical sidecar flag.
+    use_sidecar = true;
+    if islogical(scenario) || (isnumeric(scenario) && isscalar(scenario) && ismember(scenario,[0 1]) && ~isempty(scenario))
+        use_sidecar = logical(scenario);
+        scenario = [];
+    end
+    if ~isfield(opts,'sidecar'), opts.sidecar = use_sidecar; end
+    if ischar(opts.sidecar) || isstring(opts.sidecar)
+        opts.sidecar = any(strcmpi(char(opts.sidecar), {'on','true','yes'}));
+    end
+    use_sidecar = logical(opts.sidecar);
+
+    if ~isempty(scenario)
+        opts.phase = phase_from_name(scenario);
+    end
+
+    % Remaining defaults. These were lost when the argument handling was rewritten for
+    % scenario names, which broke every call - the kind of thing a smoke test catches
+    % immediately and a lint pass does not.
     if ~isfield(opts,'show'),       opts.show       = 'landing'; end
     if ~isfield(opts,'phase'),      opts.phase      = [];        end
     if ~isfield(opts,'max_tries'),  opts.max_tries  = 25;        end
     if ~isfield(opts,'animate'),    opts.animate    = true;      end
-    if ~isfield(opts,'agent_file'), opts.agent_file = 'cloned_agent_best.mat'; end
+    if ~isfield(opts,'agent_file'), opts.agent_file = 'cloned_agent_4phase.mat'; end
 
     here = fileparts(mfilename('fullpath'));
     addpath(genpath(here));
@@ -84,7 +118,9 @@ function ep = run_trained_agent(use_sidecar, opts)
     if use_sidecar, gm = 'on'; else, gm = 'off'; end
     env = LunarLanderEnv('DenseBaseline', gm);
     if ~isempty(opts.phase)
-        env.CurriculumWeights = double((1:3) == opts.phase);
+        % Four phases now. A hardcoded (1:3) silently could not select the powered
+        % descent, which is the one most worth watching.
+        env.CurriculumWeights = double((1:numel(p.phase_max_steps)) == opts.phase);
     end
 
     fprintf('\nAgent: %s   sidecar %s\n', opts.agent_file, upper(gm));
@@ -93,7 +129,10 @@ function ep = run_trained_agent(use_sidecar, opts)
     outcomes = {};
     ep = [];
     for k = 1:opts.max_tries
-        candidate = rollout_episode(env, agent);
+        % Roll to the LONGEST phase budget. The default is params.max_agent_steps
+        % (3000), which truncates a Phase 4 powered descent at ~8900 steps and reports
+        % it as a timeout that never happened.
+        candidate = rollout_episode(env, agent, max(p.phase_max_steps));
         outcomes{end+1} = candidate.outcome; %#ok<AGROW>
         if strcmp(opts.show, 'any') || strcmp(candidate.outcome, 'landed')
             ep = candidate;
@@ -105,10 +144,10 @@ function ep = run_trained_agent(use_sidecar, opts)
     if isempty(ep)
         % Report honestly rather than animating nothing.
         fprintf(2, ['No landing in %d attempts (outcomes: %s).\n' ...
-                    'This agent lands ~80%% of the time, so this is unlucky or the ' ...
-                    'agent file has changed. Try run_trained_agent(%d, ' ...
-                    'struct(''show'',''any'')) to watch a failure instead.\n'], ...
-                opts.max_tries, strjoin(unique(outcomes), ', '), use_sidecar);
+                    'The evaluated agent lands 100%% of the time at n=30 per phase, so ' ...
+                    'this means the agent file has changed or was retrained. Add ' ...
+                    'struct(''show'',''any'') to watch a failure instead.\n'], ...
+                opts.max_tries, strjoin(unique(outcomes), ', '));
         return;
     end
 

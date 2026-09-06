@@ -108,16 +108,51 @@ function testBlendingZoneScalesWithBrakingDistance(testCase)
     verifyTrue(testCase, veto_fast, 'Sidecar failed to veto a lethal descent.');
 end
 
-function testExtremeTiltAlwaysOverridden(testCase)
-    % The hard 45 degree structural limit must still apply everywhere in the envelope,
-    % including high altitude where the altitude barrier is quiet.
-    x = [0; 5000; 0; -5; 1.4; 0; 8000; 300];   % ~80 degrees of tilt
-    [u_actual, VetoTriggered, ~, ~] = safety_sidecar_filter(x, [10000; 0], ...
-        testCase.TestData.params);
+function testTiltLimitDependsOnWhetherRecoveryIsAffordable(testCase)
+    % REPLACES testExtremeTiltAlwaysOverridden, and this is a deliberate change to the
+    % safety envelope rather than a test being loosened to pass.
+    %
+    % That test asserted a 45 degree limit "everywhere in the envelope", treating it as
+    % structural. It is not structural - it is a TERMINAL DESCENT limit, and enforcing it
+    % everywhere makes a powered descent impossible: braking off orbital velocity requires
+    % pointing the engine retrograde, near 90 degrees, for minutes. Measured from 15.2 km
+    % and 1697 m/s, a fixed 45 degree envelope left the vehicle at 12.5 km still doing
+    % 549 m/s when the clock expired, against an unguarded landing at 0.29 m/s.
+    %
+    % The barrier now asks whether the RECOVERY is affordable: slewing upright takes
+    % 2*sqrt(theta/alpha) and costs |dy|*t + 0.5*g*t^2 of altitude, which the margin
+    % beyond the stopping distance must cover twice over. Near the ground it never does,
+    % so the terminal limit re-emerges on its own instead of being special-cased.
+    p = testCase.TestData.params;
+    TILT = 1.4;   % ~80 degrees
 
-    verifyTrue(testCase, VetoTriggered, 'Sidecar ignored an 80 degree tilt.');
-    verifyLessThan(testCase, u_actual(2), 0, ...
+    % LOW and falling: the slew cannot be paid for. Must be overridden.
+    x_low = [0; 300; 0; -20; TILT; 0; 8000; 300];
+    [u_low, veto_low, ~, ~] = safety_sidecar_filter(x_low, [10000; 0], p);
+    verifyTrue(testCase, veto_low, ...
+        'Sidecar permitted 80 degrees of tilt at 300 m while falling at 20 m/s.');
+    verifyLessThan(testCase, u_low(2), 0, ...
         'Sidecar must command negative torque to correct a positive tilt.');
+
+    % HIGH with margin: this is what a braking burn looks like. Must be permitted.
+    x_high = [0; 15000; 0; -5; TILT; 0; 8000; 300];
+    [~, veto_high, ~, ~] = safety_sidecar_filter(x_high, [10000; 0], p);
+    verifyFalse(testCase, veto_high, ...
+        ['Sidecar vetoed 80 degrees of tilt at 15 km with ample recovery margin. ' ...
+         'That is the attitude a powered descent requires.']);
+end
+
+function testStructuralTiltCeilingIsAlwaysEnforced(testCase)
+    % There IS a genuine structural limit, and no amount of altitude margin buys past it:
+    % beyond it the vehicle is tumbling rather than manoeuvring. Without this, the
+    % affordability rule above would permit arbitrary attitudes at high altitude.
+    p = testCase.TestData.params;
+    x = [0; 15000; 0; -5; 2.9; 0; 8000; 300];   % ~166 degrees - inverted
+    [u, veto, ~, ~] = safety_sidecar_filter(x, [10000; 0], p);
+    verifyTrue(testCase, veto, ...
+        'Sidecar permitted a near-inverted attitude because altitude margin was large.');
+    verifyLessThan(testCase, u(2), 0, ...
+        'Sidecar must torque back toward upright from an inverted attitude.');
 end
 
 function testRCSBingoFuel(testCase)

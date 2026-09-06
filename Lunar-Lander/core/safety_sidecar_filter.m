@@ -46,6 +46,25 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     u_actual = u_nominal;
     VetoTriggered = false;
     
+    % --- 1c. ATTITUDE RECOVERY COST (shared by every barrier below) ---
+    % Three separate barriers need to know what recovering from the current tilt costs,
+    % so it is computed ONCE here. Previously each barrier asked "can it brake while
+    % tilted like this" via T_max*cos(theta), which goes NEGATIVE past 90 degrees - so the
+    % altitude barrier commanded full thrust while inverted, and the fuel barrier declared
+    % that no amount of propellant could arrest the descent. Both fired constantly during
+    % a powered descent, which is flown deliberately near 90 degrees.
+    %
+    % The right question is what it costs to RECOVER and then brake: slewing upright takes
+    % a bang-bang 2*sqrt(theta/alpha), during which the engine cannot fight gravity, so
+    % the vehicle loses altitude and gains descent rate.
+    fuel_ratio_now = (m_main_fuel + m_rcs_fuel) / ...
+                     (params.max_main_fuel + params.max_rcs_fuel);
+    I_now     = params.inertia_dry + fuel_ratio_now * params.inertia_fuel_full;
+    alpha_rec = Tau_max / max(I_now, 1);
+    t_slew    = 2 * sqrt(max(abs(theta), 1e-6) / alpha_rec);
+    drop_slew = abs(dy) * t_slew + 0.5 * g * t_slew^2;   % altitude spent recovering
+    dy_after  = abs(dy) + g * t_slew;                    % descent rate once recovered
+
     % --- 2. ALTITUDE BARRIER (CRASH PREVENTION) ---
     % "The Action Governor shall assume control authority from the Primary
     % AI Agent when the current altitude is less than or equal to d_stop + safety_buffer_alt."
@@ -63,17 +82,26 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
 
     if dy < -0.5 % ACTIVE BRAKING: The ship is falling fast enough to warrant evaluation.
         
-        % Calculate absolute maximum vertical braking capability.
-        % It is necessary to factor in cos(theta), because if the ship is tilted, a portion of the 
-        % main engine's thrust is wasted pushing sideways instead of fighting gravity.
-        a_max = (T_max * cos(theta) / m_total) - g_apparent; % Note this is net vertical acceleration due to subtracting apparent gravity.
-                                                             % 0 degrees is pointing straight up (the y-axis)
-        
+        % Braking capability is evaluated for the RECOVERED attitude, not the current one,
+        % with the cost of recovering charged separately.
+        %
+        % The original form was a_max = T_max*cos(theta)/m - g_apparent, which is correct
+        % only while the vehicle stays tilted as it is. Past 90 degrees cos(theta) goes
+        % NEGATIVE, so the barrier concluded the vehicle could not brake at all and
+        % commanded full thrust - which, inverted, accelerates it toward the ground. That
+        % never mattered while a separate rule capped tilt at 45 degrees, and became live
+        % the moment a powered descent needed to point retrograde. Measured: the barrier
+        % forced full thrust at 110 degrees of tilt at 15 km.
+        %
+        % The honest question is not "can it stop while tilted like this" but "can it stop
+        % after recovering", so: charge the altitude lost during the slew, then brake
+        % upright with the speed that slew leaves behind.
+        a_max = (T_max / m_total) - g_apparent;   % upright, so always the true authority
+
         if a_max > 0
-            % The ship has enough vertical lift to overcome gravity.
-            % Calculate EXACTLY how much distance it needs to stop if the engine is floored (100%).
-            % Derived from kinematics: v_f^2 = v_i^2 + 2ad -> d = v_i^2 / 2a
-            d_min_stop = (dy^2) / (2 * a_max);
+            % Distance to stop = altitude spent recovering attitude, then the braking
+            % distance at the speed that recovery leaves the vehicle carrying.
+            d_min_stop = drop_slew + (dy_after^2) / (2 * a_max);
             
             % Margin is the "slack" in the system.
             % If margin == 0, the ship is at the exact point of no return.
@@ -116,7 +144,46 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     % --- 3. ROTATIONAL CONTROL BARRIER FUNCTION (ACTION GOVERNOR) ---
     % "The RCS side thrusters shall be seized by the action governor to force theta to 0 if the ship exceeds safe bounds, OR if it is in the altitude danger zone."
     
-    max_pitch = pi/4;          % 45 degrees - hard structural/control limit, enforced everywhere
+    % --- THE TILT LIMIT IS EARNED, NOT FIXED ---
+    % A 45 degree ceiling is correct for a terminal descent and makes a powered descent
+    % impossible: braking off orbital velocity requires pointing the engine retrograde, a
+    % pitch approaching 90 degrees, sustained for minutes. Measured on identical initial
+    % conditions from 15.2 km and 1697 m/s: unguarded the vehicle lands at 0.29 m/s, and
+    % with a fixed 45 degree envelope it never gets below 12.5 km and is still doing
+    % 549 m/s when the clock expires.
+    %
+    % The barrier therefore decides the limit from PHYSICS IT MEASURES ITSELF, rather than
+    % from a flight phase the controller declares. That distinction matters: a barrier
+    % that trusts the component it exists to police is not independent of it, and mode
+    % confusion in the nominal controller would silently widen the safety envelope.
+    %
+    % The question a tilt limit is really asking is not "how far over is it" but "can the
+    % recovery be afforded". Recovering from tilt theta means slewing back upright, which
+    % the RCS does at alpha = Tau_max / I in a bang-bang time of 2*sqrt(theta/alpha).
+    % Through that slew the engine cannot arrest the descent, so the vehicle loses
+    %
+    %     |dy| * t_rec + 0.5 * g * t_rec^2
+    %
+    % of altitude. If h_alt - the margin beyond the stopping distance, already computed
+    % above - covers that loss with margin, the tilt is recoverable and permitted. Near
+    % the ground it never does, so the terminal limit re-emerges on its own rather than
+    % being special-cased.
+    RECOVERY_MARGIN = 2.0;     % require twice the altitude the slew actually costs
+
+    % Altitude margin beyond the stopping distance, evaluated UPRIGHT: the question is
+    % what the vehicle could do once recovered, not what it can do while still tilted.
+    a_max_upright_now = (T_max / m_total) - g_apparent;
+    h_alt_now = y_pos - (dy^2) / (2 * max(0.1, a_max_upright_now));
+    tilt_is_affordable = h_alt_now > RECOVERY_MARGIN * drop_slew;
+
+    % Hard structural ceiling, enforced whatever the altitude margin says. Past this the
+    % vehicle is tumbling rather than manoeuvring.
+    max_pitch_structural = 2.44;   % ~140 degrees
+    if tilt_is_affordable
+        max_pitch = max_pitch_structural;
+    else
+        max_pitch = pi/4;      % 45 degrees - the terminal-descent envelope
+    end
     max_pitch_braking = 0.35;  % ~20 degrees - tighter limit while inside the braking envelope
 
     % The barrier fires in two cases:
@@ -136,8 +203,11 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     % attitude itself becomes the hazard.
     if abs(theta) > max_pitch || (dy < -0.5 && margin < blending_zone && abs(theta) > max_pitch_braking)
         % High-gain PD controller to aggressively torque the ship to vertical
-        kp = Tau_max / max_pitch; 
-        kd = Tau_max / max_pitch; 
+        % Gains anchored to the TERMINAL envelope, not the currently permitted one. Tying
+        % them to a variable max_pitch would weaken the recovery torque precisely when a
+        % wide envelope had been granted.
+        kp = Tau_max / (pi/4);
+        kd = Tau_max / (pi/4);
         
         Tau_req = -kp * theta - kd * dtheta;
         
@@ -160,13 +230,19 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     fuel_needed_to_stop = 0;
     
     if dy < 0
-        % Calculate how fast the spacecraft can physically stop vertically (just like the Altitude barrier)
-        a_max = (T_max * cos(theta) / m_total) - g_apparent;
-        
+        % Evaluated UPRIGHT, with the recovery charged separately - the same correction
+        % the altitude barrier needed, and for the same reason. Using cos(theta) here made
+        % a_max negative past 90 degrees, so t_stop became infinite and the bingo-fuel
+        % barrier concluded no amount of propellant could ever arrest the descent. During
+        % a braking burn, which is flown deliberately near 90 degrees, that fired
+        % constantly on a vehicle with 8 tonnes of usable propellant aboard.
+        a_max = (T_max / m_total) - g_apparent;
+
         if a_max <= 0
-            t_stop = inf; % If gravity cannot be overcome due to tilt, it will take infinite time to stop
+            t_stop = inf; % Genuinely cannot overcome gravity even pointed straight up
         else
-            t_stop = abs(dy) / a_max; % Time to stop
+            % Time to recover attitude, then to stop at the speed recovery leaves behind.
+            t_stop = t_slew + (abs(dy) + g * t_slew) / a_max;
         end
         
         % Calculate EXACTLY how much fuel will be consumed executing that emergency stop

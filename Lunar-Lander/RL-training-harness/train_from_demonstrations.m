@@ -16,7 +16,7 @@ function results = train_from_demonstrations(opts)
 % --- WHY THIS EXISTS ---
 % Four architectures at 1200 episodes, plus two longer runs, produced zero landings from
 % scratch. The reward landscape was verified on five properties and the task is solvable:
-% scripted_pilot lands 100/100/98.3% of the curriculum. The gap is exploration, and
+% the classical controller lands 100% of every phase. The gap is exploration, and
 % demonstrations close it directly.
 %
 % --- WHY TD3 AND NOT SAC ---

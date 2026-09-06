@@ -28,7 +28,17 @@ function testEmptyFuelTank(testCase)
     verifyEqual(testCase, dxdt(7), 0, 'Main fuel mass derivative should be 0 when tank is empty.');
     verifyEqual(testCase, dxdt(8), 0, 'RCS fuel mass derivative should be 0 when tank is empty.');
     
-    % ddy (the 4th derivative) should be exactly -gravity, ignoring the commanded thrust
-    verifyEqual(testCase, dxdt(4), -testCase.TestData.params.gravity, 'RelTol', 1e-4, ...
+    % ddy should be pure gravity, ignoring the commanded thrust - but gravity AT THIS
+    % ALTITUDE, not the surface value. The dynamics uses inverse-square falloff, which is
+    % 0.12% at 1 km and 1.7% at the 15.2 km powered-descent start. This assertion
+    % previously encoded the constant-gravity simplification.
+    prm = testCase.TestData.params;
+    g_at_alt = prm.gravity * (prm.r_lunar / (prm.r_lunar + x(2)))^2;
+    verifyEqual(testCase, dxdt(4), -g_at_alt, 'RelTol', 1e-6, ...
         'Lander should be in pure freefall when out of fuel, regardless of thrust command.');
+
+    % And the falloff must actually be present: asserting only the surface value would
+    % pass just as happily with gravity hardcoded.
+    verifyLessThan(testCase, abs(dxdt(4)), prm.gravity, ...
+        'Gravity is not falling off with altitude; the inverse-square term is missing.');
 end
