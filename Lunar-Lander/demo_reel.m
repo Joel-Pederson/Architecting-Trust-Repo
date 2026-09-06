@@ -117,7 +117,7 @@ function ep = run_scenario(p, sc)
 
     agent = [];
     switch sc.kind
-        case 'agent', agent = load_agent('cloned_agent_best.mat');
+        case 'agent', agent = load_agent('cloned_agent_4phase.mat');
         case 'ddpg',  agent = load_agent('trade_agent_ddpg_gamma995_saturated.mat');
     end
     if ~strcmp(sc.kind, 'pilot') && isempty(agent)

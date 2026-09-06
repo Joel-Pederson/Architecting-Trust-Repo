@@ -156,6 +156,15 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
     skip_frames = max(1, round(numel(t) / TARGET_FRAMES));
     n_rendered  = numel(1:skip_frames:numel(t));
     frame_pause = TARGET_DURATION / max(1, n_rendered);
+
+    % Annunciator hold. A sidecar engagement lasts a few physics steps - on a powered
+    % descent, 29 of 8649 - so even aggregated across skipped frames it renders as a 0.3 s
+    % blink in a 13 s playback and reads as "never activated". Real status annunciators
+    % latch for a minimum visible period for exactly this reason. The cumulative count is
+    % shown alongside so the display stays quantitative rather than just a light.
+    VETO_HOLD_FRAMES = 12;
+    veto_hold = 0;
+    veto_seen = 0;
     
     % Run animation once automatically on launch
     run_replay();
@@ -172,6 +181,9 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
         % appears dead for the life of the figure, with no error shown, which is a very
         % confusing thing to debug.
         reset_flag = onCleanup(@() set_animating(false));
+
+        veto_hold = 0;
+        veto_seen = 0;
 
         % Reset trailing paths and status for replay
         if isvalid(ax_global) && isvalid(ax_phase)
@@ -198,7 +210,9 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
         %
         % Computed per replay rather than per frame so a window resize is picked up on
         % the next run without paying for getpixelposition on every frame.
-        GLYPH_FRAC = 0.07;                       % of visible height
+        % 3% of visible height. At 7% the lander was ~1100 m tall on a Phase 4 plot
+        % spanning 16 km, which reads as a cartoon rather than a vehicle.
+        GLYPH_FRAC = 0.03;                       % of visible height
         ax_px  = getpixelposition(ax_global);
         upp_x  = diff(xlim(ax_global)) / max(ax_px(3), 1);
         upp_y  = diff(ylim(ax_global)) / max(ax_px(4), 1);
@@ -217,7 +231,31 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
             curr_theta = theta(i);
             curr_thrust = thrust(i);
             curr_fuel = fuel(i);
-            is_veto = veto(i);
+            % Aggregate the veto over the frames this render SKIPS, rather than
+            % sampling one instant.
+            %
+            % A sidecar engagement lasts a handful of physics steps. On a powered descent
+            % the barrier was active on 5 of 8649 agent steps and the animation renders
+            % every 29th frame - so ZERO rendered frames caught it, and the indicator
+            % read INACTIVE for a flight in which the barrier fired 29 times. The
+            % intervention was real and entirely invisible.
+            %
+            % Latching across the skipped window shows every engagement, at the cost of
+            % over-reporting its duration by up to one frame. For an indicator whose job
+            % is "did the barrier act", that is the right trade.
+            win_end = min(i + skip_frames - 1, numel(veto));
+            veto_now = any(veto(i:win_end));
+            if veto_now
+                % Count RISING EDGES, matching how the environment counts engagements,
+                % so the displayed number agrees with VetoCount rather than inflating it.
+                if veto_hold == 0
+                    veto_seen = veto_seen + 1;
+                end
+                veto_hold = VETO_HOLD_FRAMES;
+            elseif veto_hold > 0
+                veto_hold = veto_hold - 1;
+            end
+            is_veto = veto_hold > 0;
             
             % Dynamic dx calculation
             if i > 1
@@ -254,11 +292,15 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
             
             % Flame Update & Safety Alarm
             if is_veto
-                txt_veto_val.String = ' ACTIVE ';
+                txt_veto_val.String = sprintf(' ACTIVE  (%d) ', veto_seen);
                 txt_veto_val.BackgroundColor = [0.8 0 0]; % Red
                 flame_color = [0 0.5 1]; 
             else
-                txt_veto_val.String = ' INACTIVE ';
+                if veto_seen > 0
+                    txt_veto_val.String = sprintf(' INACTIVE  (%d) ', veto_seen);
+                else
+                    txt_veto_val.String = ' INACTIVE ';
+                end
                 txt_veto_val.BackgroundColor = [0 0.8 0]; % Green
                 flame_color = [1 0.5 0]; 
             end
