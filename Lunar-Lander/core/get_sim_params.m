@@ -187,7 +187,7 @@ function params = get_sim_params()
     % --- FLIGHT BOX ---
     % Sized for a full Apollo-style powered descent, not just a terminal approach.
     % Braking 1700 m/s of horizontal velocity at ~3.5 m/s^2 takes about 480 s and covers
-    % roughly 410 km of downrange, so a 20 km lateral boundary would have triggered
+    % roughly 550 km of downrange, so a 20 km lateral boundary would have triggered
     % out-of-bounds within seconds of PDI. Enlarging it is harmless to the existing
     % curriculum phases, which never travel more than a few hundred metres laterally.
     params.max_abs_x  = 600000;       % m - lateral boundary (downrange arc length)

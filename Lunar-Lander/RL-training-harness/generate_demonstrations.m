@@ -8,7 +8,7 @@ function demos = generate_demonstrations(opts)
 % Four architectures at 1200 episodes each, plus two longer runs, produced ZERO landings
 % under greedy evaluation. The reward landscape was verified correct on five separate
 % properties, and the task is demonstrably solvable: scripted_pilot lands 100% / 100% /
-% 98.3% of curriculum phases 1/2/3 through this same [-1,1] action interface. The gap is
+% 100% of every curriculum phase through this same [-1,1] action interface. The gap is
 % exploration - a landing requires a coordinated descent, lateral null and square-up, and
 % random action sequences never produce one. Demonstrations put successful transitions
 % into the buffer directly.

@@ -11,12 +11,13 @@ function u_nominal = scripted_pilot(x, params)
 %   3. A fixed, known-good policy for environment sanity checks, where an untrained
 %      network would confound harness bugs with policy quality.
 %
-% MEASURED PERFORMANCE (60 randomized episodes per phase, through LunarLanderEnv):
+% MEASURED PERFORMANCE (30 randomized episodes per phase, through LunarLanderEnv):
 %
-%     phase   guardian OFF          guardian ON
-%     P1      100.0%  0.25 m/s      100.0%  0.25 m/s
-%     P2      100.0%  0.30 m/s      100.0%  0.29 m/s
-%     P3       98.3%  0.33 m/s       98.3%  0.32 m/s
+%     phase   guardian ON (30 episodes each)
+%     P1      100%  0.25 m/s
+%     P2      100%  0.28 m/s
+%     P3      100%  0.29 m/s
+%     P4      100%  0.28 m/s   (via braking_guidance, which delegates here below 2.5 km)
 %
 % against a 1.0 m/s vertical / 0.5 m/s lateral touchdown gate. Landing rates are identical
 % with and without the sidecar, which is itself a result worth reporting: the Operational

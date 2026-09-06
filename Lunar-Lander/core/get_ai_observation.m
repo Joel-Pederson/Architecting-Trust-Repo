@@ -53,7 +53,7 @@ function norm_state = get_ai_observation(raw_state, params)
     h_fuel = m_main_fuel - (fuel_needed_to_stop + safety_buffer_fuel);
 
     % --- NORMALISATION: SIGNED LOG, NOT LINEAR ---
-    % The scenario spans five orders of magnitude. A powered descent begins 410 km short
+    % The scenario spans five orders of magnitude. A powered descent begins 550 km short
     % of the pad at 1697 m/s; it ends needing to resolve 0.5 m/s of lateral drift, because
     % that is the touchdown limit. No linear scale serves both: divide by 1700 and the
     % entire landing regime collapses into 0.0003 of the range, which is exactly the

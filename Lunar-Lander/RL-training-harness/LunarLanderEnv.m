@@ -166,7 +166,7 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
                 %
                 % 15.2 km altitude, ~1697 m/s horizontal, near-zero vertical rate at
                 % perilune - the point where autonomous descent actually begins. Starts
-                % 410 km SHORT of the pad and closes on it, so the drift sign is fixed:
+                % 550 km SHORT of the pad and closes on it, so the drift sign is fixed:
                 % unlike phases 1-3 this is not a drift to be nulled, it is orbital
                 % velocity to be spent.
                 %
@@ -395,7 +395,7 @@ classdef LunarLanderEnv < rl.env.MATLABEnvironment
         function n = episode_step_cap(this)
         % Episode budget for the phase currently being flown.
         %
-        % A 50 m touchdown does not need the clock a 410 km powered descent does, and
+        % A 50 m touchdown does not need the clock a 550 km powered descent does, and
         % giving every phase the longest budget would make a full-length hover cost
         % nearly as much as flying out of bounds - collapsing the ordering margin that
         % reward_ordering_test exists to protect. Phases 1-3 keep exactly the budget they

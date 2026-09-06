@@ -13,8 +13,9 @@ function ep = run_trained_agent(scenario, opts)
 % Scenario names are resolved by core/phase_from_name.
 %
 % Rolls episodes until it finds one matching `show`, then animates that one and reports
-% how many attempts it took. The attempt count is printed deliberately: this agent lands
-% about 80% of the time, and hiding the failures would misrepresent it.
+% how many attempts it took. The attempt count is printed deliberately: the measured agent
+% lands on the first attempt every time (see the table below), so anything other than
+% "attempt 1" is a regression that would otherwise be hidden by the search.
 %
 % --- WHY THIS DOES NOT CALL main_simulation ---
 % main_simulation runs to params.max_sim_steps, which is 900 s. The agent was TRAINED
@@ -28,8 +29,8 @@ function ep = run_trained_agent(scenario, opts)
 % A neural policy CLONED from the classical guidance law in core/scripted_pilot.m, not an
 % agent that discovered the task by exploration. Four RL architectures (DDPG, TD3, SAC,
 % PPO) at 1200 episodes each produced ZERO landings from scratch, in three distinct
-% failure modes. The task is not the problem - scripted_pilot lands 100/100/98.3% through
-% this same action interface. Undirected exploration simply never reaches a success region
+% failure modes. The task is not the problem - the classical controller lands 100% of every
+% phase through this same action interface. Undirected exploration never reaches a success region
 % that requires a coordinated descent, lateral null and square-up.
 %
 % --- MEASURED PERFORMANCE (30 episodes per phase, guardian ON and OFF) ---
@@ -143,10 +144,10 @@ function ep = run_trained_agent(scenario, opts)
     if isempty(ep)
         % Report honestly rather than animating nothing.
         fprintf(2, ['No landing in %d attempts (outcomes: %s).\n' ...
-                    'This agent lands ~80%% of the time, so this is unlucky or the ' ...
-                    'agent file has changed. Try run_trained_agent(%d, ' ...
-                    'struct(''show'',''any'')) to watch a failure instead.\n'], ...
-                opts.max_tries, strjoin(unique(outcomes), ', '), use_sidecar);
+                    'The evaluated agent lands 100%% of the time at n=30 per phase, so ' ...
+                    'this means the agent file has changed or was retrained. Add ' ...
+                    'struct(''show'',''any'') to watch a failure instead.\n'], ...
+                opts.max_tries, strjoin(unique(outcomes), ', '));
         return;
     end
 

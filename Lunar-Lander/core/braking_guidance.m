@@ -4,12 +4,12 @@ function [u_nominal, phase_name] = braking_guidance(x, params)
 % Spends orbital velocity and delivers the vehicle into the envelope that
 % core/scripted_pilot.m already flies competently: roughly 2.5 km altitude, under 30 m/s,
 % near the pad. It deliberately does NOT attempt the landing - that controller exists,
-% is validated at 100/100/98.3%, and there is no reason to rewrite it.
+% is validated at 100% on every curriculum phase, and there is no reason to rewrite it.
 %
 % --- WHY A SEPARATE PHASE ---
 % scripted_pilot flies a descent-rate profile with a lateral PD loop. That works from
 % 2.5 km, where lateral error is metres and speed is tens of m/s. At powered descent
-% initiation the vehicle is 410 km short of the pad doing 1697 m/s, and the problem is not
+% initiation the vehicle is 550 km short of the pad doing 1697 m/s, and the problem is not
 % "null a drift" but "spend orbital energy" - a different guidance problem, which is why
 % Apollo split descent into braking and approach phases.
 %
@@ -91,7 +91,7 @@ function [u_nominal, phase_name] = braking_guidance(x, params)
     % gravity exactly, so the vehicle is weightless and the ENTIRE engine can brake.
     %
     % A flat "reserve 30% for vertical" makes the trajectory infeasible from the first
-    % step: it yields 2.47 m/s^2, which needs 583 km to stop 1697 m/s against the 410 km
+    % step: it yields 2.47 m/s^2, which needs 583 km to stop 1697 m/s against the 550 km
     % actually available, so the profile demands the impossible and the vehicle overshoots
     % and diverges. Measured that way: arriving at -701 m/s, having reversed direction.
     g_here   = params.gravity * (params.r_lunar / r)^2 - dx^2 / r;

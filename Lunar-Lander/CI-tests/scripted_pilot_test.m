@@ -6,7 +6,7 @@ function tests = scripted_pilot_test
 % before: an earlier attempt to clamp the lateral demand traded a Phase 3 failure for a
 % Phase 1 one, and it was only caught by chance on a single episode.
 %
-% These thresholds sit well below measured performance (100/100/98.3% over 60 episodes
+% These thresholds sit well below measured performance (100% on every phase over 30 episodes
 % per phase) so ordinary noise cannot fail them - only a real regression can.
     tests = functiontests(localfunctions);
 end

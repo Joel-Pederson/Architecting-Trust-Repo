@@ -73,7 +73,7 @@ function dxdt = lunar_lander_dynamics(x, u, params)
     % NOTE ON THE COORDINATE FRAME. This makes the model CURVILINEAR, not Cartesian:
     % y_pos is altitude above the surface and x_pos is downrange ARC LENGTH along it, with
     % gravity always normal to the surface. That is the standard flat-Moon approximation
-    % used in descent guidance, and it is what makes a 410 km powered descent meaningful -
+    % used in descent guidance, and it is what makes a 550 km powered descent meaningful -
     % in a true Cartesian frame the surface would curve 48 km away from the lander over
     % that range, but here the surface is at y = 0 by construction.
     r = r_lunar + y_pos;

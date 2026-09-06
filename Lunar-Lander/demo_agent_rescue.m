@@ -24,9 +24,12 @@ function results = demo_agent_rescue(scenario, opts)
 % nothing in its training distribution looked different.
 %
 % Inputs:
-%   alt_bias - metres the altimeter over-reads (default 12)
-%   phase    - curriculum phase 1-4 (default 3)
-%   animate  - show the visualiser (default true)
+%   scenario - (Optional) 'touchdown' | 'approach' | 'terminal' | 'orbit'. Default
+%              'terminal'.
+%   opts     - (Optional) struct:
+%                .magnitude   metres the altimeter over-reads (default 12)
+%                .animate     show the visualiser (default true)
+%                .agent_file  default 'cloned_agent_4phase.mat'
 %
 % Outputs:
 %   results - 1x2 struct array (guardian off, then on)
@@ -35,6 +38,7 @@ function results = demo_agent_rescue(scenario, opts)
     if nargin < 2, opts = struct(); end
     if ~isfield(opts,'magnitude'), opts.magnitude = 12;   end
     if ~isfield(opts,'animate'),   opts.animate   = true; end
+    if ~isfield(opts,'agent_file'), opts.agent_file = 'cloned_agent_4phase.mat'; end
 
     [phase, phase_label] = phase_from_name(scenario);
     alt_bias = opts.magnitude;
@@ -44,9 +48,13 @@ function results = demo_agent_rescue(scenario, opts)
     addpath(genpath(here));
     p = get_sim_params();
 
-    f = fullfile(here, 'cloned_agent_4phase.mat');
+    f = opts.agent_file;
+    if ~isfile(f), f = fullfile(here, opts.agent_file); end
     if ~isfile(f)
-        error('demoAgentRescue:NoAgent', 'Agent not found: %s', f);
+        error('demoAgentRescue:NoAgent', ...
+            ['Agent file not found: %s\n' ...
+             'Agent .mat files are gitignored, so a fresh clone has none. ' ...
+             'Build one with train_pipeline().'], opts.agent_file);
     end
     d = load(f, 'agent'); agent = d.agent;
     if isprop(agent, 'UseExplorationPolicy'), agent.UseExplorationPolicy = false; end
