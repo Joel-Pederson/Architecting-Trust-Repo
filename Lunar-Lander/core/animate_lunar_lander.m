@@ -184,6 +184,27 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
             txt_status_val.Color = 'k';
         end
         
+        % --- Glyph scaling for the GLOBAL view ---
+        % The global axes are NOT axis-equal: a Phase 1 landing spans ~20 m across and
+        % ~65 m up, so a single scale factor draws a 7 m x 4.3 m lander at 35% of the
+        % plot width and 6% of its height - hugely stretched. The tracking camera does not
+        % have this problem because it is axis-equal.
+        %
+        % Fix: scale x and y independently so the glyph's PIXEL aspect matches its true
+        % one. Writing upp for data-units-per-pixel, the on-screen shape is
+        %     screen = diag(gscale_x/upp_x, gscale_y/upp_y) * R * shape
+        % so setting gscale_x/upp_x == gscale_y/upp_y makes that a UNIFORM scale of the
+        % rotated true shape: undistorted, and correctly rotated with it.
+        %
+        % Computed per replay rather than per frame so a window resize is picked up on
+        % the next run without paying for getpixelposition on every frame.
+        GLYPH_FRAC = 0.07;                       % of visible height
+        ax_px  = getpixelposition(ax_global);
+        upp_x  = diff(xlim(ax_global)) / max(ax_px(3), 1);
+        upp_y  = diff(ylim(ax_global)) / max(ax_px(4), 1);
+        gscale_y = max(1, (GLYPH_FRAC * diff(ylim(ax_global))) / H);
+        gscale_x = gscale_y * (upp_x / upp_y);
+
         for i = 1:skip_frames:length(t)
             if ~isvalid(fig_main) || ~isvalid(fig_phase)
                 is_animating = false;
@@ -218,22 +239,12 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
             b_coords = R * [body_x; body_y];
             n_coords = R * [nozzle_x; nozzle_y];
             
-            % Scale the glyph to the VIEW, not by a fixed factor.
-            %
-            % This was a hardcoded 50x. The lander body is 7 m wide, so it was drawn
-            % 350 m wide whatever the global view happened to span - roughly a seventh of
-            % a 2500 m Phase 3 plot, and wider than the entire flight envelope of a 50 m
-            % Phase 1 one. The magnification is only there because a true-to-scale lander
-            % is invisible at descent altitudes, so it should track the axes: the glyph
-            % now always occupies about 5% of the visible height.
-            global_span  = diff(ylim(ax_global));
-            global_scale = max(1, (0.05 * global_span) / H);
-
-            % Global View patches
-            body_patch_g.XData = (b_coords(1,:) * global_scale) + curr_x;
-            body_patch_g.YData = (b_coords(2,:) * global_scale) + curr_y;
-            nozzle_patch_g.XData = (n_coords(1,:) * global_scale) + curr_x;
-            nozzle_patch_g.YData = (n_coords(2,:) * global_scale) + curr_y;
+            % Global View patches. gscale_x and gscale_y are computed once per replay
+            % (see below) and are deliberately DIFFERENT, to cancel the axes' aspect.
+            body_patch_g.XData = (b_coords(1,:) * gscale_x) + curr_x;
+            body_patch_g.YData = (b_coords(2,:) * gscale_y) + curr_y;
+            nozzle_patch_g.XData = (n_coords(1,:) * gscale_x) + curr_x;
+            nozzle_patch_g.YData = (n_coords(2,:) * gscale_y) + curr_y;
             
             % Tracking View patches
             body_patch_t.XData = b_coords(1,:) + curr_x;
@@ -262,8 +273,8 @@ function animate_lunar_lander(t, x, y, dy, theta, thrust, fuel, veto, params)
                 
                 f_coords = R * [flame_x_base; flame_y_base];
                 
-                flame_patch_g.XData = (f_coords(1,:) * global_scale) + curr_x;
-                flame_patch_g.YData = (f_coords(2,:) * global_scale) + curr_y;
+                flame_patch_g.XData = (f_coords(1,:) * gscale_x) + curr_x;
+                flame_patch_g.YData = (f_coords(2,:) * gscale_y) + curr_y;
                 flame_patch_t.XData = f_coords(1,:) + curr_x;
                 flame_patch_t.YData = f_coords(2,:) + curr_y;
             else
