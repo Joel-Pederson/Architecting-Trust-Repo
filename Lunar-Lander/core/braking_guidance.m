@@ -52,12 +52,21 @@ function [u_nominal, phase_name] = braking_guidance(x, params)
     V_HANDOFF  = 25;        % m/s horizontal
     X_HANDOFF  = -1500;     % m short of the pad, leaving the pilot a normal approach
 
-    % Handoff requires the velocity scripted_pilot can actually absorb. At 4*V_HANDOFF
-    % (100 m/s) the braking phase handed over while still doing 94 m/s, and that
-    % controller caps lateral demand at 0.6 m/s^2 and gates its descent on lateral error -
-    % so it hovered at 125 m indefinitely rather than landing. Braking keeps authority
-    % until the velocity is genuinely inside the terminal envelope.
-    if y_pos <= Y_HANDOFF && abs(dx) <= 1.5 * V_HANDOFF
+    % --- HANDOFF BY BLENDING, NOT SWITCHING ---
+    % This was a hard if/else: below 2500 m and 37.5 m/s, hand the vehicle to
+    % scripted_pilot. That makes the demonstrated policy a DISCONTINUOUS function of
+    % state, and a network fitted by least squares averages across the discontinuity
+    % rather than reproducing it - the same failure as the clamped torque earlier.
+    %
+    % Measured: the clone flew the full 550 km braking phase correctly and arrived over
+    % the pad at 2464 m doing 54 m/s, then diverged in the last 100 seconds - commanding
+    % 1.37 more normalised thrust than the expert and crashing at 116 m/s. It was not
+    % failing at the powered descent; it was failing at the seam between two controllers.
+    %
+    % A smooth blend removes the seam. Both controllers are evaluated in the transition
+    % band and mixed, so the demonstrated action is continuous everywhere.
+    w = handoff_weight(y_pos, dx, Y_HANDOFF, V_HANDOFF);
+    if w >= 1
         u_nominal  = scripted_pilot(x, params);
         phase_name = 'handoff';
         return;
@@ -228,5 +237,32 @@ function [u_nominal, phase_name] = braking_guidance(x, params)
         u_thrust = u_thrust * max(0, 1 - (abs(err_theta) - 0.35) / 0.6);
     end
 
-    u_nominal = [u_thrust; u_torque];
+    u_braking = [u_thrust; u_torque];
+
+    % Mix in the terminal controller across the transition band.
+    if w > 0
+        u_terminal = scripted_pilot(x, params);
+        u_nominal  = (1 - w) * u_braking + w * u_terminal;
+    else
+        u_nominal = u_braking;
+    end
+end
+
+
+function w = handoff_weight(y, dx, y_h, v_h)
+% Smooth 0->1 blend from braking to terminal descent.
+%
+% Both conditions must be satisfied to hand over, so the weight is the PRODUCT of two
+% smoothsteps: one on altitude, one on horizontal speed. Using a product rather than a
+% minimum keeps the derivative continuous at the corners as well as along the edges.
+    w = smoothstep(y,  2.0 * y_h, y_h) * ...          % 0 above 5000 m, 1 by 2500 m
+        smoothstep(abs(dx), 2.5 * v_h, 1.2 * v_h);    % 0 above 62 m/s, 1 by 30 m/s
+end
+
+
+function s = smoothstep(v, v0, v1)
+% Hermite smoothstep: 0 at v0, 1 at v1, with zero derivative at both ends.
+    t = (v - v0) / (v1 - v0);
+    t = max(0, min(t, 1));
+    s = t * t * (3 - 2 * t);
 end
