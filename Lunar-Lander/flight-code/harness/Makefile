@@ -11,6 +11,13 @@
 
 CC      ?= cc
 CFLAGS  ?= -O2 -std=c99 -Wall -Wextra -pedantic
+
+# libm must be linked explicitly. The barrier calls fmax, fmin, atan2 and sqrt; on macOS
+# those live in libSystem and link implicitly, but on glibc they do not, so a build that
+# passed locally failed on the Linux CI runner with undefined references. An artefact
+# whose claim is portability has to be built somewhere other than where it was written.
+LDLIBS  ?= -lm
+
 SRCDIR   = ../src
 FIXTURES = ../fixtures
 INCLUDES = -I$(SRCDIR)
@@ -26,13 +33,13 @@ BINARIES = sidecar_equivalence sidecar_run sidecar_bench
 all: $(BINARIES)
 
 sidecar_equivalence: sidecar_equivalence.c $(GENERATED)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDLIBS)
 
 sidecar_run: sidecar_run.c $(GENERATED)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDLIBS)
 
 sidecar_bench: sidecar_bench.c $(GENERATED)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDLIBS)
 
 check: sidecar_equivalence
 	@./sidecar_equivalence $(FIXTURES)/telemetry.csv $(FIXTURES)/matlab_reference.csv

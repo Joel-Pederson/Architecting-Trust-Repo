@@ -11,6 +11,11 @@
  * not this function. A real WCET needs static analysis or a bare-metal target.
  */
 
+/* clock_gettime and CLOCK_MONOTONIC are POSIX, not ISO C. Under strict -std=c99 glibc
+ * hides them unless this is declared BEFORE any header is included, which builds fine on
+ * macOS and fails on Linux - the same asymmetry that hid the missing -lm. */
+#define _POSIX_C_SOURCE 199309L
+
 #include <stdio.h>
 #include <time.h>
 

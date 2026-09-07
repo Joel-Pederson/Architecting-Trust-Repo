@@ -10,7 +10,7 @@ jobs:
     steps:
       # Step 1: Download your repository's code onto the GitHub server
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # Step 2: Request a free MATLAB environment from MathWorks
       - name: Set up MATLAB
@@ -28,6 +28,6 @@ jobs:
       # whereas annotations are public, so this is what makes a red run diagnosable from
       # a clone or a fork.
       - name: Run Unit Tests
-        uses: matlab-actions/run-command@v1
+        uses: matlab-actions/run-command@v2
         with:
           command: addpath(fullfile(pwd, '.github', 'scripts')); run_ci_suite(pwd);

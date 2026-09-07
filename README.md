@@ -260,6 +260,11 @@ cd Lunar-Lander/flight-code/harness
 make check
 ```
 
+Requires a C99 compiler and `make`, nothing else. The build links `-lm` explicitly and
+declares `_POSIX_C_SOURCE` for the timing harness — both needed on glibc, both implicit on
+macOS, and both discovered the way portability problems always are: by building it
+somewhere other than where it was written.
+
 ```
   rows compared        : 400
   vetoes  C / MATLAB   : 19 / 19
