@@ -8,7 +8,7 @@ downrange — wrapped in a small runtime barrier that holds regardless of what t
 does. A fault-injection study shows what the barrier is worth when the controller is wrong.
 
 **This README is a walkthrough for someone who has just cloned the repo.** Results and the
-reasoning behind the design are further down, after the instructions.
+reasoning behind the design are further down, after the instructions. Note that Claude was used to develop certain parts of this codebase as well as debug issues, develop CI tests, and document code.
 
 ---
 
