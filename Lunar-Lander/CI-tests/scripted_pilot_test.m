@@ -45,7 +45,7 @@ end
 
 function [rate, mean_impact] = fly_phase(phase, n_episodes, guardian)
     env = LunarLanderEnv('DenseBaseline', guardian);
-    env.CurriculumWeights = double((1:3) == phase);
+    select_phase(env, phase);
     p = env.params;
 
     rng(11);

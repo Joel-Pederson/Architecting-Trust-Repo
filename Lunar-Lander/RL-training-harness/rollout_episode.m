@@ -26,10 +26,6 @@ function ep = rollout_episode(env, agent, max_steps)
 %        .reward, .steps, .outcome, .veto_count, .veto_steps
 %        .touchdown_dx, .touchdown_dy, .touchdown_theta
 
-    if nargin < 3 || isempty(max_steps)
-        max_steps = env.params.max_agent_steps;
-    end
-
     % Evaluate the greedy policy. Restored afterwards so a caller that reuses the agent
     % for further training does not silently lose its exploration.
     restore_exploration = false;
@@ -40,6 +36,19 @@ function ep = rollout_episode(env, agent, max_steps)
     cleanup = onCleanup(@() restore_flag(agent, restore_exploration));
 
     obs = reset(env);
+
+    % --- STEP BUDGET COMES FROM THE PHASE THE ENVIRONMENT ACTUALLY DREW ---
+    % Resolved AFTER reset, because until then the phase is not known.
+    %
+    % The old default was params.max_agent_steps, the TRAINING episode cap of 3000. A
+    % Phase 4 powered descent needs ~8,900, so every unbudgeted Phase 4 rollout was
+    % truncated partway down and scored as a timeout that never happened. That was
+    % invisible while callers only evaluated phases 1-3, and became a silent wrong answer
+    % the moment evaluate_policy started iterating every configured phase: it reported a
+    % Phase 4 number while guaranteeing Phase 4 could not pass.
+    if nargin < 3 || isempty(max_steps)
+        max_steps = env.params.phase_max_steps(max(env.Phase, 1));
+    end
 
     states   = zeros(8, max_steps + 1);
     controls = zeros(2, max_steps + 1);

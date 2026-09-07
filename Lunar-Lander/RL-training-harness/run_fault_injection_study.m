@@ -36,6 +36,10 @@ function results = run_fault_injection_study(opts)
 % Inputs (optional struct):
 %   opts.n_episodes - episodes per cell (default 25)
 %   opts.phases     - curriculum phases to sweep (default 1:3)
+%   opts.controller - 'pilot' (default) or 'agent'. The classical pilot is the default
+%                     because this study's result does not depend on a network existing;
+%                     'agent' runs the same grid against the frozen trained policy.
+%   opts.agent_file - default 'cloned_agent_4phase.mat', used when controller is 'agent'
 %   opts.seed       - default 101
 %
 % Outputs:
@@ -45,11 +49,14 @@ function results = run_fault_injection_study(opts)
     if ~isfield(opts,'n_episodes'), opts.n_episodes = 25;  end
     if ~isfield(opts,'phases'),     opts.phases     = 1:3; end
     if ~isfield(opts,'seed'),       opts.seed       = 101; end
+    if ~isfield(opts,'controller'), opts.controller = 'pilot'; end
+    if ~isfield(opts,'agent_file'), opts.agent_file = 'cloned_agent_4phase.mat'; end
 
     here = fileparts(mfilename('fullpath'));
     repoRoot = fullfile(here, '..');
     addpath(genpath(repoRoot));
     p = get_sim_params();
+    controller = resolve_controller(opts, repoRoot);
 
     spec = { 'alt_bias',    [0 5 10 20 40],      'altimeter high by %g m'; ...
              'vel_bias',    [0 0.3 0.5 0.7 0.9], 'descent rate under-read %g'; ...
@@ -64,8 +71,8 @@ function results = run_fault_injection_study(opts)
             fprintf('%-30s | %6s %8s %8s | %6s %8s %8s %7s\n', ...
                 'magnitude','land%','impact','worst','land%','impact','worst','vetoes');
             for mg = spec{f,2}
-                a = one_cell(p, ph, 'off', ft, mg, opts.n_episodes, opts.seed);
-                b = one_cell(p, ph, 'on',  ft, mg, opts.n_episodes, opts.seed);
+                a = one_cell(p, ph, 'off', ft, mg, opts.n_episodes, opts.seed, controller);
+                b = one_cell(p, ph, 'on',  ft, mg, opts.n_episodes, opts.seed, controller);
                 fprintf('%-30s | %5.0f%% %8.2f %8.2f | %5.0f%% %8.2f %8.2f %7.1f\n', ...
                     sprintf(spec{f,3}, mg), 100*a.land, a.impact, a.impact_max, ...
                     100*b.land, b.impact, b.impact_max, b.vetoes);
@@ -79,38 +86,40 @@ function results = run_fault_injection_study(opts)
         {'Fault','Magnitude','Phase','LandRate_Off','Impact_Off','WorstImpact_Off', ...
          'LandRate_On','Impact_On','WorstImpact_On','MeanVetoes_On'});
 
-    outfile = fullfile(repoRoot, 'fault_injection_results.mat');
+    outfile = fullfile(repoRoot, sprintf('fault_injection_results_%s.mat', opts.controller));
     save(outfile, 'results');
     fprintf('\nSaved: %s\n', outfile);
 end
 
 
-function m = one_cell(p, phase, guardian, fault, mag, n, seed)
-    env = LunarLanderEnv('DenseBaseline', guardian);
-    select_phase(env, phase);
-    rng(seed);   % identical initial conditions for the on/off pair
+function m = one_cell(p, phase, guardian, fault, mag, n, seed, controller)
+% One (fault, magnitude, phase, guardian) cell.
+%
+% The flight itself is delegated to fly_with_faults, which the Monte Carlo study also uses.
+% This function's job is only to express an enumerated cell AS a draw: exactly one fault,
+% present from the first step, on a nominal plant.
+%
+% Sharing the loop fixed two things this study had wrong on its own. It called
+% scripted_pilot, the TERMINAL guidance law, which cannot fly a powered descent at all; and
+% it capped every episode at params.max_agent_steps rather than the phase's own budget,
+% which truncates a Phase 4 descent partway down and scores it as a timeout that never
+% happened. Both were invisible while the sweep only ever ran phases 1-3.
     landed = 0; impacts = []; vetoes = zeros(1,n);
+
     for ep = 1:n
-        reset(env);
-        hist = {};
-        for i = 1:p.max_agent_steps
-            s_true = env.State;
-            s_seen = apply_sensor_fault(s_true, fault, mag, hist);
-            if strcmp(fault,'delay'), hist{end+1} = s_true; end %#ok<AGROW>
-            u = scripted_pilot(s_seen, p);
-            if strcmp(fault,'thrust_loss'), u(1) = u(1) * (1 - mag); end
-            % Invert the environment's action map. Mass comes from TRUE state: a
-            % fuel-gauge fault is a different experiment.
-            a = command_to_action(u, s_true, p);
-            [~,~,done] = step(env, a);
-            if done, break; end
+        draw = draw_for(fault, mag);
+        % Seed varies per episode but is shared between the guardian arms by the caller,
+        % so on and off face identical initial conditions.
+        r = fly_with_faults(controller, draw, p, ...
+                struct('phase', phase, 'guardian', guardian, 'seed', seed + ep));
+
+        landed = landed + strcmp(r.outcome, 'landed');
+        if isfinite(r.impact)
+            impacts(end+1) = r.impact; %#ok<AGROW>
         end
-        landed = landed + strcmp(env.Outcome,'landed');
-        if any(strcmp(env.Outcome, {'landed','crashed'}))
-            impacts(end+1) = sqrt(env.State(3)^2 + env.State(4)^2); %#ok<AGROW>
-        end
-        vetoes(ep) = env.VetoCount;
+        vetoes(ep) = r.vetoes;
     end
+
     m.land   = landed / n;
     m.impact = mean(impacts);   % NaN if nothing reached the ground, which is meaningful
     m.vetoes = mean(vetoes);
@@ -127,6 +136,41 @@ function m = one_cell(p, phase, guardian, fault, mag, n, seed)
         m.impact_p90 = prctile_local(impacts, 90);
     end
     m.n_grounded = numel(impacts);
+end
+
+
+function draw = draw_for(fault, mag)
+% An enumerated cell as a draw: one fault, from step one, nominal plant.
+    draw = struct('sensors', struct('type', {}, 'magnitude', {}, 'onset', {}), ...
+                  'thrust', 1.0, 'thrust_onset', 0, 'dry_mass', [], 'ic_scale', 1.0);
+    switch fault
+        case 'none'
+            % nothing to add
+        case 'thrust_loss'
+            draw.thrust = 1 - mag;
+        otherwise
+            draw.sensors(1) = struct('type', fault, 'magnitude', mag, 'onset', 0);
+    end
+end
+
+
+function controller = resolve_controller(opts, repoRoot)
+    if strcmp(opts.controller, 'pilot')
+        controller = struct('kind', 'pilot');
+        return;
+    end
+    f = opts.agent_file;
+    if ~isfile(f), f = fullfile(repoRoot, opts.agent_file); end
+    if ~isfile(f)
+        error('runFaultInjectionStudy:NoAgent', ...
+            ['Agent file not found: %s\nAgent .mat files are gitignored. Build one with ' ...
+             'train_pipeline(), or run with the default controller ''pilot''.'], ...
+            opts.agent_file);
+    end
+    d = load(f, 'agent');
+    a = d.agent;
+    if isprop(a, 'UseExplorationPolicy'), a.UseExplorationPolicy = false; end
+    controller = struct('kind', 'agent', 'agent', a);
 end
 
 

@@ -66,13 +66,13 @@ addpath(genpath(pwd))
 Every entry point calls `addpath(genpath(...))` on itself, so running one directly from a
 fresh session also works. The `addpath` above just saves repeating it.
 
-### 2. Verify the install — 99 tests, no training required
+### 2. Verify the install — 109 tests, no training required
 
 ```matlab
 runtests('CI-tests', 'IncludeSubfolders', true)
 ```
 
-Expect **99 passed, 0 failed** in about two minutes. This is the same suite CI runs. It
+Expect **109 passed, 0 failed** in about two minutes. This is the same suite CI runs. It
 exercises the physics, the reward landscape, the barrier, the action interface, the fault
 models, the animator and the imitation pipeline — none of which need a trained network.
 
@@ -199,7 +199,8 @@ numeric indices 1–4 still work.
 ```matlab
 demo_reel                       % the whole argument as four animated scenarios
 demo_agent_rescue('orbit')      % the barrier rescuing the NEURAL agent from a blind altimeter
-run_fault_injection_study       % the full fault sweep, ~5 min, 3000 episodes
+run_fault_injection_study       % the enumerated fault sweep, ~5 min, 3000 episodes
+run_ood_study                   % Monte Carlo over unanticipated conditions
 run_algorithm_trade             % the from-scratch RL negative result, hours
 ```
 
@@ -332,10 +333,12 @@ Reading the file would not have surfaced that. Attempting to compile it did.
 
 | Command | Needs a trained agent? | Time | What it does |
 |---|---|---|---|
-| `runtests('CI-tests','IncludeSubfolders',true)` | no | 2 min | the CI suite, 99 tests |
+| `runtests('CI-tests','IncludeSubfolders',true)` | no | 2 min | the CI suite, 109 tests |
 | `demo_sidecar_rescue` | no | 30 s | barrier vs faulty **classical** pilot |
 | `main_simulation('HARDCODED_PILOT')` | no | 30 s | classical test bench, writes a telemetry plot |
-| `run_fault_injection_study` | no | 5 min | 60-cell fault sweep, the necessity experiment |
+| `run_fault_injection_study` | no | 5 min | 60-cell enumerated fault sweep |
+| `run_fault_injection_study(struct('controller','agent'))` | yes | ~20 min | the same grid against the trained policy |
+| `run_ood_study` | yes | ~45 min | Monte Carlo over unanticipated conditions |
 | `train_pipeline` | builds one | 2 h | rebuild the agent from nothing |
 | `evaluate_final_agent` | yes | 6 min | the headline table, both guardian arms |
 | `run_trained_agent('orbit')` | yes | 1 min | animate one episode |
@@ -358,7 +361,8 @@ Everything lands in `Lunar-Lander/`, and all of it is gitignored:
 | `demonstrations.mat` | `train_pipeline` stage 1 |
 | `cloned_agent_4phase.mat` | `train_pipeline` stages 2 and 4 — **the agent every demo loads** |
 | `dagger_corpus.mat` | `train_pipeline` stage 3 |
-| `fault_injection_results.mat` | `run_fault_injection_study` |
+| `fault_injection_results_{pilot,agent}.mat` | `run_fault_injection_study` |
+| `ood_study_{agent,pilot}.mat` | `run_ood_study` |
 | `algorithm_trade_results.mat`, `trade_agent_*.mat` | `run_algorithm_trade` |
 | `core/Flight_Logs/telemetry_*.png` | `main_simulation` |
 
@@ -459,6 +463,92 @@ converts a total loss into a landing across every perception and actuator fault 
 table deliberately: the barrier reacts to true state, but it cannot act earlier than the
 actuator responds. Beyond roughly 2 seconds of latency there is no recovery left to enforce.
 
+### Unanticipated conditions — Monte Carlo on the frozen agent
+
+The enumerated sweep above asks whether the barrier holds against the faults we thought of:
+four types, five hand-picked magnitudes, strictly one at a time. That is the question you
+would ask of a *fault-tolerant controller*, which has to anticipate each failure mode.
+
+`run_ood_study` asks the question the architecture actually claims. It samples a continuum
+— faults **combined**, magnitudes **continuous and past the swept range**, onsets **mid-descent**,
+the plant itself **off-nominal**, and initial states **outside the training box** — and flies
+each sampled condition twice, differing only in the barrier. 975 draws per controller.
+
+| 975 draws | barrier OFF | barrier ON |
+|---|---|---|
+| within the 1.0 m/s gate | 28.0% | **76.2%** |
+| draws converted from violation to compliance | — | **48.7%** |
+
+**Excluding control delay** — the architecture's known boundary, discussed below — across
+the remaining 543 draws:
+
+| phase | OFF | ON | worst impact ON |
+|---|---|---|---|
+| 1 — touchdown | 55.3% | **100.0%** | 0.56 m/s |
+| 2 — approach | 25.2% | **100.0%** | 0.63 m/s |
+| 3 — terminal | 12.4% | **97.2%** | 1.13 m/s |
+| 4 — orbit | 10.2% | 42.9% | 81.18 m/s |
+| **all** | **29.1%** | **93.9%** | |
+
+#### The barrier is controller-agnostic, and that is the point
+
+Running the identical sample against the classical pilot instead of the neural policy:
+
+| excluding delay | neural agent | classical pilot |
+|---|---|---|
+| within gate, barrier ON | **93.9%** | **94.5%** |
+| P1 / P2 / P3 | 100% / 100% / 97.2% | 100% / 100% / 94.4% |
+
+A learned policy under distribution shift can emit arbitrary commands, where a PD loop
+degrades smoothly — so the reasonable prior was that the agent would be harder to bound.
+It is not. The barrier reads true state and enforces a state-space property; what produced
+the command turns out not to matter. That is the architecture's central claim, measured
+rather than asserted.
+
+#### The sample rediscovered the delay boundary on its own
+
+**86% of the 232 escapes involve control delay**, and the sample was never told to look
+there. A hand-picked sweep confirming a hand-picked limit is weak evidence; an unbiased
+sample landing on the same limit independently is much stronger.
+
+Sharper than "no benefit beyond 20 steps": past its latency limit the barrier is **actively
+harmful**. It made the outcome worse in 14.8% of grounded draws, and 86% of those involve
+delay — 91% for the classical pilot, so this is a property of the barrier under latency,
+not of the policy. The barrier reacts to true state but cannot act earlier than the
+actuator responds, and a late correction is worse than none.
+
+#### Coverage degrades as faults stack
+
+| simultaneous faults | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|---|
+| n | 23 | 109 | 237 | 281 | 204 | 95 | 24 |
+| within gate, OFF | 96% | 46% | 33% | 26% | 16% | 14% | 8% |
+| within gate, ON | 96% | **92%** | **81%** | **75%** | **71%** | **60%** | **54%** |
+
+The barrier helps substantially at every level, and at zero faults it costs nothing — but
+this is a large improvement whose margin erodes under compound failure, **not a guarantee**.
+Reporting a single pooled number would hide that, and the shape is the more useful finding.
+
+#### Phase 4 is where the learned policy is genuinely weaker
+
+Under compound faults the powered descent holds at 42.9% for the agent against 59.2% for
+the classical pilot — the one place the two controllers diverge materially. An 8,900-step
+descent gives a fault far longer to compound, and the barrier cannot recover a vehicle that
+has spent its energy budget wrongly 500 km from the pad.
+
+#### Read the coverage claim honestly
+
+This does not escape the enumeration problem, it **widens** it. "Faults we thought of"
+becomes "a sampling distribution we chose", and the distribution in `sample_ood_draw` is a
+choice like any other. A continuum beats five points and compound beats one-at-a-time, but
+these are claims about *this* box. What would actually escape the problem is proving forward
+invariance of the barrier set — named as future work, not attempted here.
+
+One design lesson is already paid for and encoded in the sampler: every fault drawn is
+**persistent** — a bias, a freeze, a degradation, a delay. Zero-mean noise was measured to
+leave landing rates at ~100% with and without the barrier, so sampling it would spend the
+budget on conditions any feedback loop shrugs off.
+
 ### Negative results worth keeping
 
 - **Zero-mean sensor noise does not discriminate.** Gaussian action noise up to σ = 0.5
@@ -466,7 +556,12 @@ actuator responds. Beyond roughly 2 seconds of latency there is no recovery left
   10 Hz rejects zero-mean disturbance by construction. Every fault model in
   [core/apply_sensor_fault.m](Lunar-Lander/core/apply_sensor_fault.m) is therefore
   **systematic** — something the controller can neither see nor correct.
-- **Control delay beyond ~20 steps is unrecoverable**, as above.
+- **Control delay beyond ~20 steps is unrecoverable, and past that point the barrier is
+  actively harmful.** Found first in the enumerated sweep and then rediscovered
+  independently by the Monte Carlo, which was never told to look there: 86% of its
+  escapes involve delay, and the barrier made the outcome *worse* in ~14% of grounded
+  draws, 86–91% of which involve delay. The barrier reacts to true state but cannot act
+  earlier than the actuator responds.
 - **Severe velocity under-read used to be unrecoverable, and no longer is.** Before the
   regime-aware barrier rework a 0.7 under-read went 0% → 0%; it now goes 0% → 96%. The
   barrier and the guidance law both changed between those measurements, so the credit is
@@ -566,7 +661,10 @@ Lunar-Lander/
     pretrain_actor_supervised.m  pipeline stages 2 and 4
     dagger_refine.m              pipeline stage 3
     phase_landing_rates.m        THE measurement everything is selected on
-    run_fault_injection_study.m  the necessity experiment
+    fly_with_faults.m            one episode, degraded controller, off-nominal plant
+    sample_ood_draw.m            the Monte Carlo sampler (and its stated limits)
+    run_ood_study.m              unanticipated-condition study
+    run_fault_injection_study.m  the enumerated fault sweep
     run_algorithm_trade.m        the four-architecture negative result
     train_rl_agent.m             train one architecture from scratch
     train_from_demonstrations.m  reproduces the offline-RL negative result
@@ -579,7 +677,7 @@ Lunar-Lander/
     harness/                     make check | make demo | make bench
     fixtures/                    telemetry and the MATLAB reference output
 
-  CI-tests/                      99 tests across 19 files
+  CI-tests/                      109 tests across 21 files
   train_pipeline.m               rebuild the agent from nothing
   evaluate_final_agent.m         the headline table
   run_trained_agent.m            watch one episode
