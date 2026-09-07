@@ -77,7 +77,18 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
     
     % How much physical distance exists between the ship and the hover floor?
     distance_left = y_pos - safety_buffer_alt;
-    margin = inf; % Default to infinite safety margin unless falling
+    % MARGIN SENTINELS ARE FINITE ON PURPOSE.
+    % These two defaults used to be +Inf and -Inf. Both are only ever consumed by
+    % comparisons, never by arithmetic, so realmax is exactly equivalent - and it keeps
+    % IEEE special-case handling out of the generated flight code entirely. See
+    % codegen/README.md: with any Inf in this function, MATLAB Coder must emit
+    % rt_nonfinite.c, rtGetInf.c and rtGetNaN.c alongside the barrier, and the artefact
+    % stops being straight-line arithmetic. Flight-software review generally objects to
+    % Inf and NaN in the first place.
+    MARGIN_UNBOUNDED = realmax;    % not descending: no braking boundary applies
+    MARGIN_BREACHED  = -realmax;   % cannot arrest at any throttle: always inside the wall
+
+    margin = MARGIN_UNBOUNDED; % Default: no braking boundary applies unless falling
     blending_zone = 5; % Default warning envelope width (meters), rescaled below when falling
 
     if dy < -0.5 % ACTIVE BRAKING: The ship is falling fast enough to warrant evaluation.
@@ -110,8 +121,10 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
         else
             % CRITICAL SCENARIO: Gravity is currently stronger than the available vertical thrust capability.
             % This happens if the ship is tilted too far (e.g. 90 degrees), or if the engine is too weak.
-            % Mathematically, it is impossible to stop falling under these conditions, so margin is negative infinity.
-            margin = -inf; 
+            % It is impossible to stop falling under these conditions, so the vehicle is
+            % unconditionally inside the barrier. margin is only compared, never used in
+            % arithmetic, so the finite sentinel is exact.
+            margin = MARGIN_BREACHED;
         end
         
         % The Blending Zone (set above) prevents violent, structural-damaging binary
@@ -238,15 +251,23 @@ function [u_actual, VetoTriggered, h_alt, h_fuel] = safety_sidecar_filter(x, u_n
         % constantly on a vehicle with 8 tonnes of usable propellant aboard.
         a_max = (T_max / m_total) - g_apparent;
 
+        % Unlike the margin sentinels above, this one cannot simply be made finite: the
+        % old t_stop = Inf was MULTIPLIED by mdot, and realmax * mdot overflows straight
+        % back to Inf. So the "cannot arrest" case sets the fuel DEMAND directly instead
+        % of routing an infinite time through a multiplication.
         if a_max <= 0
-            t_stop = inf; % Genuinely cannot overcome gravity even pointed straight up
+            % Genuinely cannot overcome gravity even pointed straight up, so no quantity
+            % of propellant arrests this descent and the bingo condition is
+            % unconditionally true. Any demand exceeding a full tank expresses that
+            % exactly, because m_main_fuel can never exceed max_main_fuel.
+            fuel_needed_to_stop = params.max_main_fuel + 1;
         else
             % Time to recover attitude, then to stop at the speed recovery leaves behind.
             t_stop = t_slew + (abs(dy) + g * t_slew) / a_max;
+
+            % Calculate EXACTLY how much fuel will be consumed executing that stop
+            fuel_needed_to_stop = mdot * t_stop;
         end
-        
-        % Calculate EXACTLY how much fuel will be consumed executing that emergency stop
-        fuel_needed_to_stop = mdot * t_stop;
         
         % "Upon reaching bingo fuel level, the Action Governor shall immediately force a maximum-thrust suicide burn"
         % If the tank level drops to the exact amount of fuel required to stop + the 3-second reserve...

@@ -4,14 +4,8 @@ function demos = generate_demonstrations(opts)
 % Produces the dataset that seeds an off-policy agent's replay buffer, so learning does
 % not depend on undirected exploration stumbling into the success region.
 %
-% --- WHY THIS EXISTS ---
-% Four architectures at 1200 episodes each, plus two longer runs, produced ZERO landings
-% under greedy evaluation. The reward landscape was verified correct on five separate
-% properties, and the task is demonstrably solvable: scripted_pilot lands 100% / 100% /
-% 100% of every curriculum phase through this same [-1,1] action interface. The gap is
-% exploration - a landing requires a coordinated descent, lateral null and square-up, and
-% random action sequences never produce one. Demonstrations put successful transitions
-% into the buffer directly.
+% Learning from scratch failed here and the classical pilot does not; README.md, "Why the
+% pipeline has this shape", records that measurement. This is stage 1 of train_pipeline.
 %
 % --- RECORDING CONTRACT ---
 % Two decisions here are load-bearing:
@@ -71,7 +65,7 @@ function demos = generate_demonstrations(opts)
 
     for phase = 1:n_phases
         env = LunarLanderEnv('DenseBaseline', opts.guardian);
-        env.CurriculumWeights = double((1:n_phases) == phase);
+        select_phase(env, phase);
 
         for ep = 1:per_phase(phase)
             % Noise on a fraction of episodes. A purely on-policy expert dataset lies on

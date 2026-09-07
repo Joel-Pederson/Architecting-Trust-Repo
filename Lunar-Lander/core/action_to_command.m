@@ -10,21 +10,16 @@ function u_nominal = action_to_command(action, x, params)
 % practice (the Apollo LM PGNCS commanded acceleration above a gravity feedforward
 % term) and re-parameterises the existing control authority rather than adding any.
 %
-% It replaces a raw throttle map, u = (a+1)/2 * T_max. The problem with raw throttle is
-% not its range - measured, both maps span about the same net acceleration at full mass
-% (1.76 vs 1.62 m/s^2 per action unit). It is that raw throttle's plant gain depends on
-% MASS: as the 8200 kg of propellant burns off, the same action produces up to
-% 5.26 m/s^2 per unit instead of 1.76, a 3x drift in the plant the policy is learning
-% against. Compensating makes the action->acceleration map invariant to fuel state.
+% It replaces a raw throttle map, u = (a+1)/2 * T_max, whose problem was not range but
+% MASS DEPENDENCE: as 8200 kg of propellant burns off the same action goes from 1.76 to
+% 5.26 m/s^2 per unit, a 3x drift in the plant the policy is learning against.
+% Compensating makes the action->acceleration map invariant to fuel state.
 %
 % Torque maps linearly; the side thrusters are bidirectional.
 %
-% --- WHY THIS IS A SEPARATE FUNCTION ---
-% It was previously inlined in LunarLanderEnv.step, and main_simulation kept its own
-% copy of the OLD raw-throttle map. An agent flown through main_simulation was therefore
-% driving a different plant than it trained on - at full tanks, action 0 commanded
-% 22.5 kN there against the environment's 20.3 kN hover, and the mass-invariance property
-% was absent entirely. Two definitions of a control interface is one too many.
+% It lives in its own file because it was once inlined in LunarLanderEnv.step while
+% main_simulation kept a copy of the OLD map - so an agent flown there drove a different
+% plant than it trained on. Two definitions of a control interface is one too many.
 %
 % Inputs:
 %   action - 2x1 normalised action [thrust; torque], each in [-1, 1]

@@ -98,6 +98,6 @@ function x = full_tanks(p)
     x = [0; 500; 0; -5; 0; 0; p.max_main_fuel; p.max_rcs_fuel];
 end
 
-function x = near_empty(p)
+function x = near_empty(~)
     x = [0; 500; 0; -5; 0; 0; 10; 5];
 end

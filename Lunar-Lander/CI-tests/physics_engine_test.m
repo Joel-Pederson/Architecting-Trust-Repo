@@ -1,4 +1,4 @@
-function tests = test_dynamics
+function tests = physics_engine_test
 %TEST_DYNAMICS - Create function-based tests for lunar lander dynamics
 %
 % Input arguments:

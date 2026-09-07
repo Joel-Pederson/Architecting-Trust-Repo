@@ -103,6 +103,82 @@ function testEveryPhaseHasAStepBudget(testCase)
 end
 
 
+function testSelectPhaseIsSizedFromParamsNotHardcoded(testCase)
+% The regression this function was extracted to prevent. Nine call sites had each written
+% their own one-hot and two had hardcoded three phases, so adding the powered descent
+% silently made it unselectable in run_fault_injection_study - the script the paper's
+% central result comes from.
+    p = get_sim_params();
+    n = numel(p.phase_max_steps);
+
+    for ph = 1:n
+        env = LunarLanderEnv('DenseBaseline', 'off');
+        idx = select_phase(env, ph);
+        verifyEqual(testCase, idx, ph);
+        verifyEqual(testCase, numel(env.CurriculumWeights), n, ...
+            'The weight vector must span every configured phase, not a hardcoded three.');
+        verifyEqual(testCase, env.CurriculumWeights, double((1:n) == ph), ...
+            'select_phase must select exactly the requested phase.');
+    end
+
+    % Names work here too, so callers need not resolve them first.
+    env = LunarLanderEnv('DenseBaseline', 'off');
+    verifyEqual(testCase, select_phase(env, 'orbit'), 4);
+    verifyEqual(testCase, env.CurriculumWeights, double((1:n) == 4));
+
+    % And a phase the params do not configure is refused rather than silently producing
+    % an all-zero weight vector for the environment to normalise by its own sum.
+    env = LunarLanderEnv('DenseBaseline', 'off');
+    verifyError(testCase, @() select_phase(env, n + 1), ...
+        'phaseFromName:BadIndex');
+end
+
+
+function testEveryPhaseIsReachableByTheFaultStudy(testCase)
+% run_fault_injection_study used to hardcode (1:3), so opts.phases = 4 produced a weight
+% vector of zeros. Resetting such an environment yields NaN thresholds, which is a silent
+% wrong answer rather than an error. Assert every configured phase actually resets.
+    p = get_sim_params();
+    for ph = 1:numel(p.phase_max_steps)
+        env = LunarLanderEnv('DenseBaseline', 'on');
+        select_phase(env, ph);
+        rng(7);
+        reset(env);
+        verifyEqual(testCase, env.Phase, ph, ...
+            sprintf('Resetting a phase-%d environment must actually start phase %d.', ph, ph));
+        verifyTrue(testCase, all(isfinite(env.State)), ...
+            'A zero or unnormalised weight vector shows up as a non-finite initial state.');
+    end
+end
+
+
+function testPhaseLandingRatesReportsPerPhase(testCase)
+% The shared measurement that train_pipeline, dagger_refine and evaluate_final_agent each
+% used to implement separately. Flown with an UNTRAINED agent on purpose: no .mat files
+% exist in CI, and the contract under test is the shape and per-phase separation of the
+% result, not how well anything flies.
+    p = get_sim_params();
+    env = LunarLanderEnv('DenseBaseline', 'off');
+    agent = build_agent('td3', getObservationInfo(env), getActionInfo(env), p.agent_dt);
+
+    stats = phase_landing_rates(agent, p, ...
+        struct('n_episodes', 1, 'phases', 1:2, 'seed', 11));
+
+    verifyEqual(testCase, stats.phases, 1:2);
+    verifyEqual(testCase, numel(stats.rate), 2, ...
+        'One rate per requested phase, never pooled across phases.');
+    verifyEqual(testCase, numel(stats.impact), 2);
+    verifyEqual(testCase, numel(stats.worst), 2);
+    verifyTrue(testCase, all(stats.rate >= 0 & stats.rate <= 1), ...
+        'A landing rate is a fraction.');
+
+    % Where an impact was recorded at all, the worst cannot be better than the mean.
+    seen = isfinite(stats.impact);
+    verifyTrue(testCase, all(stats.worst(seen) >= stats.impact(seen) - 1e-12), ...
+        'The worst impact cannot be better than the mean impact.');
+end
+
+
 function verifySubstring(testCase, haystack, needle, msg)
     verifyTrue(testCase, contains(haystack, needle), msg);
 end

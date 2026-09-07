@@ -23,7 +23,6 @@ end
 function testReplayingRecordedActionsReproducesTheTrajectory(testCase)
     % The core fidelity assertion. Replay the recorded action sequence from the recorded
     % initial state and require the same terminal state and outcome.
-    p = testCase.TestData.params;
     d = generate_demonstrations(struct('n_per_phase', 2, 'noise_frac', 1.0, 'outfile', ''));
     verifyGreaterThan(testCase, d.n_episodes, 0, 'Generator produced no landed episodes.');
 

@@ -15,23 +15,18 @@ function results = train_pipeline(opts)
 %     all four curriculum phases and record every (state, action) pair it produced.
 %
 %   2 CLONE        pretrain_actor_supervised x N     -> cloned_agent_4phase.mat
-%     Fit N independently initialised TD3 actors to that dataset by regression and keep
-%     the one that actually FLIES best. Selection is on closed-loop landing rate, never on
-%     validation loss: across candidates the correlation between the two was -0.021, and
-%     an epoch sweep had RMSE falling monotonically 0.184 -> 0.107 while landing rate
-%     bounced 43/10/57/47/3/20 percent. Regression error selects a policy that hovers.
+%     Fit N independently initialised TD3 actors and keep the one that FLIES best.
+%     Selection is on closed-loop landing rate, never validation loss.
 %
 %   3 DAGGER       dagger_refine                     -> dagger_corpus.mat
-%     The clone from stage 2 lands the short phases but not the powered descent, because
-%     cloning only fits the expert's own trajectory and an 8900-step descent leaves it far
-%     off that trajectory long before touchdown. DAgger rolls out the CLONE and labels the
-%     states it actually reaches with what the EXPERT would have done there.
+%     Roll out the CLONE, label the states it reaches with what the EXPERT would do there.
 %
 %   4 SELECT       two-stage screen and verify       -> cloned_agent_4phase.mat
-%     Re-clone from the aggregated DAgger corpus and pick a winner. Screening 8 candidates
-%     at n=8 and taking the maximum is the winner's curse, and it bit here: a clone that
-%     screened at 88% on Phase 4 scored 33% when re-measured at n=30. So screen wide and
-%     cheap, then RE-MEASURE a shortlist on fresh seeds and select on that.
+%     Re-clone from the aggregated corpus, screen wide and cheap, then RE-MEASURE a
+%     shortlist on fresh seeds. Taking the max of one noisy screen is the winner's curse.
+%
+% README.md, "Why the pipeline has this shape", carries the measurement behind each of
+% those choices.
 %
 % Stage 2 overwrites cloned_agent_4phase.mat with a seed clone; stage 4 overwrites it
 % again with the finished agent. Running stages 3:4 alone therefore requires a stage-2
@@ -160,7 +155,8 @@ function best = select_clone(demos, p, opts, base_seed, do_verify)
         [a, info] = pretrain_actor_supervised(a, demos, p, ...
             struct('max_epochs', opts.epochs, 'verbose', false));
         cands{k} = a;
-        screen(k,:) = rates_at(a, p, opts.screen_n, 111);
+        screen(k,:) = phase_landing_rates(a, p, ...
+                          struct('n_episodes', opts.screen_n, 'seed', 111)).rate;
         fprintf('%8d %10.4f %7.0f%% %7.0f%% %7.0f%% %7.0f%% %8.0f%%\n', k, info.rmse_val, ...
             100*screen(k,1), 100*screen(k,2), 100*screen(k,3), 100*screen(k,4), ...
             100*mean(screen(k,:)));
@@ -185,7 +181,8 @@ function best = select_clone(demos, p, opts, base_seed, do_verify)
     verify = nan(size(screen));
     best_mean = -1; best_k = short(1);
     for k = short
-        verify(k,:) = rates_at(cands{k}, p, opts.verify_n, 777);
+        verify(k,:) = phase_landing_rates(cands{k}, p, ...
+                          struct('n_episodes', opts.verify_n, 'seed', 777)).rate;
         fprintf('  verify %d: P1 %3.0f%% P2 %3.0f%% P3 %3.0f%% P4 %3.0f%% | mean %3.0f%%\n', ...
             k, 100*verify(k,1), 100*verify(k,2), 100*verify(k,3), 100*verify(k,4), ...
             100*mean(verify(k,:)));
@@ -201,26 +198,6 @@ function best = select_clone(demos, p, opts, base_seed, do_verify)
                   'verify', verify, 'rates', verify(best_k,:));
 end
 
-
-function r = rates_at(agent, p, n, seed)
-% Landing rate PER PHASE. A pooled average would be meaningless: a Phase 4 descent runs
-% ~8900 agent steps against Phase 1's ~450, so pooling hides which regime works.
-    n_phases = numel(p.phase_max_steps);
-    r = zeros(1, n_phases);
-    for ph = 1:n_phases
-        env = LunarLanderEnv('DenseBaseline', 'on');
-        env.CurriculumWeights = double((1:n_phases) == ph);
-        rng(seed);
-        landed = 0;
-        for k = 1:n
-            % Roll to the LONGEST phase budget, not params.max_agent_steps, or a Phase 4
-            % descent is truncated mid-flight and scored as a timeout that never happened.
-            ep = rollout_episode(env, agent, max(p.phase_max_steps));
-            landed = landed + strcmp(ep.outcome, 'landed');
-        end
-        r(ph) = landed / n;
-    end
-end
 
 
 function s = summarise(demos)

@@ -13,9 +13,9 @@ function ep = run_trained_agent(scenario, opts)
 % Scenario names are resolved by core/phase_from_name.
 %
 % Rolls episodes until it finds one matching `show`, then animates that one and reports
-% how many attempts it took. The attempt count is printed deliberately: the measured agent
-% lands on the first attempt every time (see the table below), so anything other than
-% "attempt 1" is a regression that would otherwise be hidden by the search.
+% how many attempts it took. That count is printed deliberately: the measured agent lands
+% on the first attempt every time, so anything else is a regression the search would
+% otherwise hide.
 %
 % --- WHY THIS DOES NOT CALL main_simulation ---
 % main_simulation runs to params.max_sim_steps, which is 900 s. The agent was TRAINED
@@ -25,35 +25,10 @@ function ep = run_trained_agent(scenario, opts)
 % rather than the failure mode it is. Rolling the episode here keeps playback and
 % training on the same footing.
 %
-% --- WHAT THIS AGENT IS ---
-% A neural policy CLONED from the classical guidance law in core/scripted_pilot.m, not an
-% agent that discovered the task by exploration. Four RL architectures (DDPG, TD3, SAC,
-% PPO) at 1200 episodes each produced ZERO landings from scratch, in three distinct
-% failure modes. The task is not the problem - the classical controller lands 100% of every
-% phase through this same action interface. Undirected exploration never reaches a success region
-% that requires a coordinated descent, lateral null and square-up.
-%
-% --- MEASURED PERFORMANCE (30 episodes per phase, guardian ON and OFF) ---
-%
-%   phase | GUARDIAN ON              | GUARDIAN OFF
-%         |  land%  impact  worst    |  land%  impact  worst
-%       1 |   100%    0.24    0.26   |   100%    0.26    0.35
-%       2 |   100%    0.21    0.21   |   100%    0.30    0.38
-%       3 |   100%    0.19    0.20   |   100%    0.18    0.20
-%       4 |   100%    0.46    0.50   |   100%    0.54    0.60
-%
-% 240 episodes, zero failures, worst impact 0.60 m/s against a 1.0 m/s limit - including
-% 60 complete powered descents from 15.2 km and 1697 m/s across 550 km of downrange.
-%
-% Phase 4 required two fixes beyond plain cloning: a SMOOTH blend between the braking and
-% terminal controllers (a discontinuous handoff cannot be fitted by regression), and
-% beta-mixed DAgger (see dagger_refine).
-%
-% --- MODEL SELECTION ---
-% Chosen from 8 candidates by CLOSED-LOOP LANDING RATE, not validation loss. Across those
-% candidates the correlation between validation RMSE and landing rate was -0.021. An epoch
-% sweep had RMSE falling monotonically 0.184 -> 0.107 while landing rate bounced
-% 43/10/57/47/3/20 percent, so selecting on regression error picks a policy that hovers.
+% The agent is a neural policy CLONED from the classical guidance law, not one that
+% discovered the task by exploration, and it lands 100% of all four phases at n=30 with
+% the barrier attached or detached. README.md, "Why the pipeline has this shape", explains
+% why cloning rather than RL and why selection is on landing rate rather than loss.
 %
 % Inputs:
 %   scenario - (Optional) 'touchdown' | 'approach' | 'terminal' | 'orbit'
@@ -118,9 +93,7 @@ function ep = run_trained_agent(scenario, opts)
     if use_sidecar, gm = 'on'; else, gm = 'off'; end
     env = LunarLanderEnv('DenseBaseline', gm);
     if ~isempty(opts.phase)
-        % Four phases now. A hardcoded (1:3) silently could not select the powered
-        % descent, which is the one most worth watching.
-        env.CurriculumWeights = double((1:numel(p.phase_max_steps)) == opts.phase);
+        select_phase(env, opts.phase);
     end
 
     fprintf('\nAgent: %s   sidecar %s\n', opts.agent_file, upper(gm));

@@ -3,7 +3,7 @@ function tests = visualizer_test
     tests = functiontests(localfunctions);
 end
 
-function setupOnce(testCase)
+function setupOnce(~)
     scriptPath = fileparts(mfilename('fullpath'));
     addpath(genpath(fullfile(scriptPath, '..')));
 end

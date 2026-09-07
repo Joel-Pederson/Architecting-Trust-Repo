@@ -73,13 +73,18 @@ function T = evaluate_final_agent(opts)
     fprintf('%6s | %7s %8s %8s | %7s %8s %8s\n', ...
         '', 'land%', 'impact', 'worst', 'land%', 'impact', 'worst');
 
+    % Same seed in both arms, so the guardian is the ONLY difference between them.
+    base = struct('n_episodes', opts.n_episodes, 'seed', opts.seed);
+    on  = phase_landing_rates(agent, p, setfield(base, 'guardian', 'on'));  %#ok<SFLD>
+    off = phase_landing_rates(agent, p, setfield(base, 'guardian', 'off')); %#ok<SFLD>
+
     rows = zeros(n_phases, 6);
     for ph = 1:n_phases
-        on  = one_cell(agent, p, ph, 'on',  opts);
-        off = one_cell(agent, p, ph, 'off', opts);
-        rows(ph,:) = [on.rate, on.impact, on.worst, off.rate, off.impact, off.worst];
+        rows(ph,:) = [on.rate(ph), on.impact(ph), on.worst(ph), ...
+                      off.rate(ph), off.impact(ph), off.worst(ph)];
         fprintf('%6d | %6.0f%% %8.2f %8.2f | %6.0f%% %8.2f %8.2f\n', ph, ...
-            100*on.rate, on.impact, on.worst, 100*off.rate, off.impact, off.worst);
+            100*on.rate(ph), on.impact(ph), on.worst(ph), ...
+            100*off.rate(ph), off.impact(ph), off.worst(ph));
     end
     fprintf('%6s | %6.0f%%                  | %6.0f%%\n', 'mean', ...
         100*mean(rows(:,1)), 100*mean(rows(:,4)));
@@ -91,33 +96,4 @@ function T = evaluate_final_agent(opts)
          'LandRate_Off','Impact_Off','WorstImpact_Off'});
     T.Phase = (1:n_phases)';
     T = movevars(T, 'Phase', 'Before', 1);
-end
-
-
-function m = one_cell(agent, p, phase, guardian, opts)
-    n_phases = numel(p.phase_max_steps);
-    env = LunarLanderEnv('DenseBaseline', guardian);
-    env.CurriculumWeights = double((1:n_phases) == phase);
-
-    % Same seed in both arms, so the guardian is the ONLY difference between them.
-    rng(opts.seed);
-    landed = 0;
-    impacts = [];
-    for k = 1:opts.n_episodes
-        % Longest phase budget: params.max_agent_steps truncates a Phase 4 descent.
-        ep = rollout_episode(env, agent, max(p.phase_max_steps));
-        landed = landed + strcmp(ep.outcome, 'landed');
-        % Timeouts and out-of-bounds episodes never touch down, so they have no impact
-        % speed to average. Counting them as zero would flatter the result.
-        if any(strcmp(ep.outcome, {'landed','crashed'}))
-            impacts(end+1) = hypot(ep.touchdown_dx, ep.touchdown_dy); %#ok<AGROW>
-        end
-    end
-
-    m.rate = landed / opts.n_episodes;
-    if isempty(impacts)
-        m.impact = NaN; m.worst = NaN;
-    else
-        m.impact = mean(impacts); m.worst = max(impacts);
-    end
 end

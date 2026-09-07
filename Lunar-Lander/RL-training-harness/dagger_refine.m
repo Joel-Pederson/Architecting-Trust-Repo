@@ -7,17 +7,9 @@ function [agent, history, aggregated] = dagger_refine(agent, demos, params, opts
 % reaches with what the EXPERT would have done there, aggregate, retrain.
 %
 % --- WHY THIS AND NOT MORE DATA ---
-% Plain cloning of the four-phase curriculum plateaued at P1 100%, P2 88%, P3 88%,
-% P4 25% (n=30). Refining with this function took the agent to 100% on ALL FOUR phases,
-% verified at n=25 per phase and re-confirmed at n=30 with the guardian both attached and
-% detached - 240 episodes, zero failures.
-%
-% and the failure scales with HORIZON, not with difficulty: a Phase 4 powered descent is
-% ~8900 agent steps against Phase 1's ~450, so accumulated action error has twenty times
-% the exposure before touchdown. Adding expert demonstrations does not help, because they
-% all lie on the expert's trajectory and the clone's problem is everywhere else. Neither
-% does capacity - 512-unit networks lowered validation RMSE from 0.131 to 0.121 while the
-% best landing rate FELL from 72% to 66%.
+% Cloning plateaued at Phase 4 25%; this took it to 100%. Neither more demonstrations nor
+% more capacity helps, because the failure scales with horizon rather than difficulty -
+% see README.md, "Why the pipeline has this shape", for both measurements.
 %
 % --- THE LABEL IS THE EXPERT'S, THE ACTION IS THE CLONE'S ---
 % This is the whole trick and it is easy to get backwards. The episode is flown with the
@@ -100,7 +92,7 @@ function [agent, history, aggregated] = dagger_refine(agent, demos, params, opts
                     struct('max_epochs', opts.epochs, 'verbose', false));
 
         % --- 3. MEASURE ---
-        rates = phase_landing_rates(agent, params, 8);
+        rates = phase_landing_rates(agent, params, struct('n_episodes', 8)).rate;
         history(end+1) = struct('iter', it, 'rates', rates, 'n_added', n_added); %#ok<AGROW>
 
         if opts.verbose
@@ -122,7 +114,7 @@ function eps_out = collect_corrections(agent, p, eps_per_phase, beta)
 
     for ph = 1:numel(eps_per_phase)
         env = LunarLanderEnv('DenseBaseline', 'off');
-        env.CurriculumWeights = double((1:numel(eps_per_phase)) == ph);
+        select_phase(env, ph);
         cap = p.phase_max_steps(ph);
 
         for k = 1:eps_per_phase(ph)
@@ -166,18 +158,3 @@ function eps_out = collect_corrections(agent, p, eps_per_phase, beta)
     end
 end
 
-
-function rates = phase_landing_rates(agent, p, n)
-    rates = zeros(1, numel(p.phase_max_steps));
-    for ph = 1:numel(rates)
-        env = LunarLanderEnv('DenseBaseline', 'on');
-        env.CurriculumWeights = double((1:numel(rates)) == ph);
-        rng(42);
-        landed = 0;
-        for k = 1:n
-            ep = rollout_episode(env, agent, max(p.phase_max_steps));
-            landed = landed + strcmp(ep.outcome, 'landed');
-        end
-        rates(ph) = landed / n;
-    end
-end
