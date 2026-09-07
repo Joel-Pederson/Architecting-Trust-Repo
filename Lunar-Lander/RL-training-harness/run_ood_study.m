@@ -68,12 +68,12 @@ function results = run_ood_study(opts)
                        'outcome_on', {}, 'impact_on', {}, 'vetoes_on', {});
 
     for ph = opts.phases
-        n = opts.n_draws;
-        if ph == 4
-            % A Phase 4 descent runs ~8,900 agent steps against Phase 1's ~450. Sampling it
-            % as heavily would spend most of the study's compute on one phase.
-            n = max(25, round(opts.n_draws / 4));
-        end
+        % Scale the sample down for long phases rather than naming one. A Phase 4 descent
+        % runs ~8,900 agent steps against Phase 1's ~450, so sampling every phase equally
+        % would spend most of the study's compute on the longest one. Derived from the
+        % budgets so a fifth phase does not silently get the short-phase treatment.
+        cost = p.phase_max_steps(ph) / min(p.phase_max_steps);
+        n = max(25, round(opts.n_draws / max(1, sqrt(cost))));
 
         if opts.verbose
             fprintf('\n===== PHASE %d | %d draws | controller: %s =====\n', ...

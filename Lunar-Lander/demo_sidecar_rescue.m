@@ -74,7 +74,7 @@ end
 function ep = fly_once(p, guardian, alt_bias)
 % One episode, Phase 1, fixed seed so both arms face the identical initial condition.
     env = LunarLanderEnv('DenseBaseline', guardian);
-    env.CurriculumWeights = [1 0 0];
+    select_phase(env, 'touchdown');
     rng(101);
     reset(env);
 

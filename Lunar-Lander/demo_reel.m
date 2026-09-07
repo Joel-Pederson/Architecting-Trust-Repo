@@ -110,7 +110,7 @@ function ep = run_scenario(p, sc)
 % across the reel. That is what makes 2 and 3 a controlled comparison rather than two
 % anecdotes.
     env = LunarLanderEnv('DenseBaseline', sc.guardian);
-    env.CurriculumWeights = [1 0 0];
+    select_phase(env, 'touchdown');
     % FIXED seed. Scenarios 2 and 3 must face an identical initial condition or they are
     % two anecdotes rather than a controlled comparison.
     rng(101);

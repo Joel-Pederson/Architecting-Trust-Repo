@@ -66,13 +66,13 @@ addpath(genpath(pwd))
 Every entry point calls `addpath(genpath(...))` on itself, so running one directly from a
 fresh session also works. The `addpath` above just saves repeating it.
 
-### 2. Verify the install — 107 tests, no training required
+### 2. Verify the install — 109 tests, no training required
 
 ```matlab
 runtests('CI-tests', 'IncludeSubfolders', true)
 ```
 
-Expect **107 passed, 0 failed** in about two minutes. This is the same suite CI runs. It
+Expect **109 passed, 0 failed** in about two minutes. This is the same suite CI runs. It
 exercises the physics, the reward landscape, the barrier, the action interface, the fault
 models, the animator and the imitation pipeline — none of which need a trained network.
 
@@ -333,7 +333,7 @@ Reading the file would not have surfaced that. Attempting to compile it did.
 
 | Command | Needs a trained agent? | Time | What it does |
 |---|---|---|---|
-| `runtests('CI-tests','IncludeSubfolders',true)` | no | 2 min | the CI suite, 107 tests |
+| `runtests('CI-tests','IncludeSubfolders',true)` | no | 2 min | the CI suite, 109 tests |
 | `demo_sidecar_rescue` | no | 30 s | barrier vs faulty **classical** pilot |
 | `main_simulation('HARDCODED_PILOT')` | no | 30 s | classical test bench, writes a telemetry plot |
 | `run_fault_injection_study` | no | 5 min | 60-cell enumerated fault sweep |
@@ -677,7 +677,7 @@ Lunar-Lander/
     harness/                     make check | make demo | make bench
     fixtures/                    telemetry and the MATLAB reference output
 
-  CI-tests/                      107 tests across 20 files
+  CI-tests/                      109 tests across 21 files
   train_pipeline.m               rebuild the agent from nothing
   evaluate_final_agent.m         the headline table
   run_trained_agent.m            watch one episode

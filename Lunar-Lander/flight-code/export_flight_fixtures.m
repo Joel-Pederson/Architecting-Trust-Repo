@@ -52,7 +52,7 @@ function info = export_flight_fixtures(opts)
     if ~isfolder(fixtures), mkdir(fixtures); end
 
     env = LunarLanderEnv('DenseBaseline', 'on');
-    env.CurriculumWeights = [1 0 0];
+    select_phase(env, 'touchdown');
     rng(opts.seed);
     reset(env);
 

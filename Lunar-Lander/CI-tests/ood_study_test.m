@@ -84,7 +84,6 @@ function testSensorFaultsCompose(testCase)
 % Compound perception faults must STACK, not overwrite. If the second fault were applied
 % to the true state rather than the already-corrupted one, a draw with two faults would
 % silently behave like a draw with one.
-    p = testCase.TestData.p;
     x = [0; 80; 0; -6; 0.05; 0; 5000; 200];
 
     bias_only   = apply_sensor_fault(x, 'alt_bias', 10);
@@ -167,7 +166,7 @@ function d = nominal_draw()
 end
 
 
-function s0 = capture_initial_state(draw, p, guardian, seed)
+function s0 = capture_initial_state(draw, ~, guardian, seed)
 % Reproduce fly_with_faults' setup exactly and read the state it would have started from.
     env = LunarLanderEnv('DenseBaseline', guardian);
     if ~isempty(draw.dry_mass), env.params.dry_mass = draw.dry_mass; end

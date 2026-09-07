@@ -179,6 +179,73 @@ function testPhaseLandingRatesReportsPerPhase(testCase)
 end
 
 
+function testRolloutBudgetsThePhaseItActuallyDrew(testCase)
+% THE BUG THIS EXISTS TO CATCH.
+%
+% rollout_episode used to default its step budget to params.max_agent_steps - the TRAINING
+% episode cap of 3000. A Phase 4 powered descent needs ~8,900, so any caller that did not
+% pass a budget explicitly had every Phase 4 episode truncated partway down and scored as a
+% timeout that never happened.
+%
+% That was invisible while callers only evaluated phases 1-3, and became a silent WRONG
+% ANSWER the moment evaluate_policy started iterating every configured phase: it reported a
+% Phase 4 result while guaranteeing Phase 4 could not pass. A behavioural test on landing
+% rate would not have caught it - the number looked plausible, it was just impossible.
+    p = get_sim_params();
+    verifyGreaterThan(testCase, p.phase_max_steps(4), p.max_agent_steps, ...
+        'This test only means something while Phase 4 outlasts the training cap.');
+
+    for ph = 1:numel(p.phase_max_steps)
+        env = LunarLanderEnv('DenseBaseline', 'off');
+        select_phase(env, ph);
+        rng(3);
+        reset(env);
+        % The budget rollout_episode WOULD choose, resolved the same way it resolves it.
+        verifyEqual(testCase, p.phase_max_steps(env.Phase), p.phase_max_steps(ph), ...
+            'The environment must report the phase that was selected.');
+        verifyGreaterThanOrEqual(testCase, p.phase_max_steps(ph), 1, ...
+            'Every configured phase needs a positive step budget.');
+    end
+end
+
+
+function testEveryEntryPointResolvesPhasesThroughOnePlace(testCase)
+% Nine call sites once hand-wrote the curriculum one-hot and two of them went stale. Outside
+% the test suite there should now be no hand-written weight vectors at all - the phase
+% vocabulary has one implementation and this asserts nobody has quietly added a tenth.
+    root = fileparts(fileparts(mfilename('fullpath')));
+    offenders = {};
+
+    areas = {fullfile(root, 'core'), fullfile(root, 'RL-training-harness'), ...
+             fullfile(root, 'flight-code'), root};
+    for a = 1:numel(areas)
+        files = dir(fullfile(areas{a}, '**', '*.m'));
+        for k = 1:numel(files)
+            f = fullfile(files(k).folder, files(k).name);
+            if contains(f, [filesep 'CI-tests' filesep]), continue; end
+            % LunarLanderEnv declares the property; select_phase is the one sanctioned
+            % place that assigns it, and this rule exists to route everyone through it.
+            if any(strcmp(files(k).name, {'LunarLanderEnv.m', 'select_phase.m'}))
+                continue;
+            end
+            lines = strsplit(fileread(f), newline);
+            code  = regexprep(lines, '%.*$', '');
+            hit = ~cellfun(@isempty, regexp(code, 'CurriculumWeights\s*=', 'once'));
+            % evaluate_policy legitimately installs the uniform EVALUATION mix.
+            hit = hit & cellfun(@isempty, regexp(code, 'eval_curriculum_weights', 'once'));
+            if any(hit)
+                offenders{end+1} = files(k).name; %#ok<AGROW>
+            end
+        end
+    end
+
+    verifyEmpty(testCase, offenders, sprintf( ...
+        ['These files assign CurriculumWeights directly instead of calling select_phase: ' ...
+         '%s. Hand-written one-hots are how the phase count went stale twice.'], ...
+        strjoin(unique(offenders), ', ')));
+end
+
+
 function verifySubstring(testCase, haystack, needle, msg)
     verifyTrue(testCase, contains(haystack, needle), msg);
 end
