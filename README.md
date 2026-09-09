@@ -22,8 +22,12 @@ demo_sidecar_rescue          % needs no trained network — this is the paper's 
 
 Two flights, one crash, one landing, difference is the barrier. Nothing to train.
 
-Everything involving the **neural agent** needs about two hours of training first, because
-all `.mat` files are gitignored. That is [step 4](#4-train-the-networks--2-hours).
+```matlab
+run_trained_agent('orbit')    % the full powered descent, flown by the neural policy
+```
+
+**The trained policy is committed**, so this works on a fresh clone too. Retraining it from
+scratch is [step 4](#4-optional--retrain-the-networks-from-scratch-2-hours) and is optional.
 
 ---
 
@@ -42,8 +46,10 @@ Check what you have:
 ver          % look for Reinforcement Learning Toolbox and Deep Learning Toolbox
 ```
 
-If a toolbox is missing, steps 1–3 still work — they use no learning at all. Only step 4
-onward needs them.
+If a toolbox is missing, steps 1–3 and the flight-code build still work — they use no
+learning at all. Playback of the committed policy needs the Deep Learning and
+Reinforcement Learning toolboxes to deserialise it; the **portable weights export** below
+needs neither.
 
 ---
 
@@ -66,13 +72,13 @@ addpath(genpath(pwd))
 Every entry point calls `addpath(genpath(...))` on itself, so running one directly from a
 fresh session also works. The `addpath` above just saves repeating it.
 
-### 2. Verify the install — 109 tests, no training required
+### 2. Verify the install — 113 tests
 
 ```matlab
 runtests('CI-tests', 'IncludeSubfolders', true)
 ```
 
-Expect **109 passed, 0 failed** in about two minutes. This is the same suite CI runs. It
+Expect **113 passed, 0 failed** in about two minutes. This is the same suite CI runs. It
 exercises the physics, the reward landscape, the barrier, the action interface, the fault
 models, the animator and the imitation pipeline — none of which need a trained network.
 
@@ -118,13 +124,19 @@ demo_sidecar_rescue(10, false)   % numbers only, no animation windows
 **This is the core result and it involves no machine learning at all.** If you only run one
 thing, run this.
 
-### 4. Train the networks — ~2 hours
+### 4. (Optional) Retrain the networks from scratch — ~2 hours
 
-Everything past this point needs a trained agent. `.mat` files are gitignored (see
-[.gitignore](.gitignore)), so a fresh clone has **no** agent and **no** demonstration
-dataset. `run_trained_agent`, `evaluate_final_agent` and `demo_agent_rescue` raise a
-`:NoAgent` error naming this step until you do it; `demo_reel` skips the scenarios it
-cannot fly and plays the rest.
+**You do not need this to run anything.** `cloned_agent_4phase.mat` is committed, so a
+fresh clone can already fly every demo and reproduce every published figure.
+
+It is committed deliberately: each headline number was measured on *that specific network*,
+and retraining draws a different one. The agent is evidence, not a build output — the same
+reason [the generated C](#flight-code-the-barrier-as-c) is committed rather than generated
+on demand. What stays gitignored is the scratch it was built from: `demonstrations.mat`
+(~21 MB) and `dagger_corpus.mat` (~50 MB), both regenerable and neither evidence of
+anything.
+
+Run this step if you want to verify the pipeline reproduces, or to train a variant.
 
 ```matlab
 train_pipeline
@@ -221,6 +233,66 @@ make bench      # how long one evaluation takes
 
 That is a C compiler and nothing else. See [Flight code](#flight-code-the-barrier-as-c)
 below for what it is and why it exists.
+
+---
+
+## What is committed, and why
+
+Both halves of the architecture's argument ship in the repository, in a form a reader can
+inspect without rebuilding anything.
+
+| | committed | size | why |
+|---|---|---|---|
+| the barrier | `flight-code/src/*.c` | 448 lines | the trusted core, auditable with a C compiler and no MATLAB |
+| the policy | `cloned_agent_4phase.mat` | 721 KB | the exact network every published figure was measured on |
+| the policy, portably | `cloned_agent_4phase_weights.mat` | 254 KB | 69,122 plain numbers, no toolbox needed |
+
+That symmetry is deliberate. The paper claims a small verifiable component bounds a large
+unverifiable one; shipping only the verifiable half would let a reader audit the thing
+asserted to be *safe* while taking on faith the thing asserted to be *dangerous*.
+
+### The portable weights
+
+The agent `.mat` holds a serialised `rlTD3Agent`. Reading it needs the Reinforcement
+Learning Toolbox and it is coupled to the MATLAB release that wrote it — fragile in a way
+the generated C is not. So `export_agent_weights` also writes the same policy as plain
+arrays:
+
+```matlab
+export_agent_weights          % regenerate after retraining
+```
+
+```
+69122 learnable parameters across 7 layers, 254 KB
+    State           FeatureInputLayer      -
+    ActorFC1        FullyConnectedLayer   256
+    ActorRelu1      ReLULayer              -
+    ActorFC2        FullyConnectedLayer   256
+    ActorRelu2      ReLULayer              -
+    ActionOutput    FullyConnectedLayer     2
+    ActionTanh      TanhLayer              -
+```
+
+Saved as a v7 MAT-file, so `scipy.io.loadmat` reads it directly. The entire forward pass is
+four lines:
+
+```
+h = max(0, ActorFC1_Weights * obs + ActorFC1_Bias)
+h = max(0, ActorFC2_Weights * h   + ActorFC2_Bias)
+a = tanh(ActionOutput_Weights * h + ActionOutput_Bias)
+```
+
+with `obs` built by [core/get_ai_observation.m](Lunar-Lander/core/get_ai_observation.m) and
+`a` mapped to physical units by
+[core/action_to_command.m](Lunar-Lander/core/action_to_command.m). Those two files are the
+authoritative definition of the interface and are deliberately **not** duplicated into the
+weights file — a fact written in two places is how six of this project's defects happened.
+
+`CI-tests/agent_weights_test.m` runs that forward pass from the exported arrays alone and
+compares against the real policy across the full envelope. An independent double-precision
+implementation agrees to about **2e-6** on an action in [−1, 1]; the network stores and
+computes in `single`, so that residual is accumulation order inside a 256-wide dot product,
+not a difference in the weights, which convert single-to-double losslessly.
 
 ---
 
@@ -331,22 +403,23 @@ Reading the file would not have surfaced that. Attempting to compile it did.
 
 ## Command reference
 
-| Command | Needs a trained agent? | Time | What it does |
+| Command | Needs training first? | Time | What it does |
 |---|---|---|---|
-| `runtests('CI-tests','IncludeSubfolders',true)` | no | 2 min | the CI suite, 109 tests |
+| `runtests('CI-tests','IncludeSubfolders',true)` | no | 2 min | the CI suite, 113 tests |
 | `demo_sidecar_rescue` | no | 30 s | barrier vs faulty **classical** pilot |
 | `main_simulation('HARDCODED_PILOT')` | no | 30 s | classical test bench, writes a telemetry plot |
 | `run_fault_injection_study` | no | 5 min | 60-cell enumerated fault sweep |
-| `run_fault_injection_study(struct('controller','agent'))` | yes | ~20 min | the same grid against the trained policy |
-| `run_ood_study` | yes | ~45 min | Monte Carlo over unanticipated conditions |
+| `run_fault_injection_study(struct('controller','agent'))` | no (committed) | ~20 min | the same grid against the trained policy |
+| `run_ood_study` | no (committed) | ~45 min | Monte Carlo over unanticipated conditions |
 | `train_pipeline` | builds one | 2 h | rebuild the agent from nothing |
-| `evaluate_final_agent` | yes | 6 min | the headline table, both guardian arms |
-| `run_trained_agent('orbit')` | yes | 1 min | animate one episode |
-| `demo_agent_rescue('orbit')` | yes | 2 min | barrier vs faulty **neural** agent |
-| `demo_reel` | yes | 5 min | all four scenarios in sequence |
+| `evaluate_final_agent` | no (committed) | 6 min | the headline table, both guardian arms |
+| `run_trained_agent('orbit')` | no (committed) | 1 min | animate one episode |
+| `demo_agent_rescue('orbit')` | no (committed) | 2 min | barrier vs faulty **neural** agent |
+| `demo_reel` | no (committed) | 5 min | all four scenarios in sequence |
 | `run_algorithm_trade` | builds four | hours | DDPG / TD3 / SAC / PPO from scratch |
 | `train_rl_agent('td3')` | builds one | ~1 h | train a single architecture from scratch |
 | `train_from_demonstrations` | builds one | ~1 h | reproduces the offline-RL negative result |
+| `export_agent_weights` | no (committed) | 5 s | rewrite the portable weights after retraining |
 | `generate_flight_code` | no | 30 s | regenerate the C from the MATLAB barrier |
 | `make check` (in `flight-code/harness`) | no | 2 s | C-vs-MATLAB equivalence, **no MATLAB** |
 
@@ -354,12 +427,14 @@ Reading the file would not have surfaced that. Attempting to compile it did.
 
 ## Where things get written
 
-Everything lands in `Lunar-Lander/`, and all of it is gitignored:
+Everything lands in `Lunar-Lander/`. The trained policy and its weights export are
+**committed**; everything else here is gitignored scratch:
 
 | File | Written by |
 |---|---|
 | `demonstrations.mat` | `train_pipeline` stage 1 |
-| `cloned_agent_4phase.mat` | `train_pipeline` stages 2 and 4 — **the agent every demo loads** |
+| `cloned_agent_4phase.mat` | `train_pipeline` stages 2 and 4 — **committed**; the agent every demo loads |
+| `cloned_agent_4phase_weights.mat` | `export_agent_weights` — **committed**; portable, no toolbox |
 | `dagger_corpus.mat` | `train_pipeline` stage 3 |
 | `fault_injection_results_{pilot,agent}.mat` | `run_fault_injection_study` |
 | `ood_study_{agent,pilot}.mat` | `run_ood_study` |
@@ -377,7 +452,9 @@ evaluate_final_agent(struct('agent_file', 'my_other_agent.mat'))
 ## Troubleshooting
 
 **`Agent file not found: cloned_agent_4phase.mat`**
-Expected on a fresh clone — the `.mat` files are gitignored. Run `train_pipeline` (step 4).
+Should not happen on a clean clone — that file is committed. It means the file was deleted
+or you pointed `opts.agent_file` at something else. `git checkout Lunar-Lander/cloned_agent_4phase.mat`,
+or rebuild with `train_pipeline`.
 
 **`Required file not found: .../demonstrations.mat`**
 You asked `train_pipeline` to start at a stage whose input does not exist yet. The error
@@ -677,8 +754,9 @@ Lunar-Lander/
     harness/                     make check | make demo | make bench
     fixtures/                    telemetry and the MATLAB reference output
 
-  CI-tests/                      109 tests across 21 files
+  CI-tests/                      113 tests across 22 files
   train_pipeline.m               rebuild the agent from nothing
+  export_agent_weights.m         write the policy as portable plain arrays
   evaluate_final_agent.m         the headline table
   run_trained_agent.m            watch one episode
   demo_sidecar_rescue.m          barrier vs faulty CLASSICAL pilot

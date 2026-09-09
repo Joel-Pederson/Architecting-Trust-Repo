@@ -6,8 +6,8 @@ function tests = ood_study_test
 % barrier. Each of those is a property a test can hold, and each has a failure mode that
 % would leave the study still producing plausible-looking numbers.
 %
-% Everything here flies the classical pilot, because CI has no trained agent - the .mat
-% files are gitignored - and none of these properties are about the policy.
+% Everything here flies the classical pilot: none of these properties are about the policy,
+% and the classical stack exercises the same flight loop without a network in the way.
 
     tests = functiontests(localfunctions);
 end

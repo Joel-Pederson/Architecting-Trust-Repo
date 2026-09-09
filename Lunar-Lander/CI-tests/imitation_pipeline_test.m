@@ -98,7 +98,7 @@ function testCloningActuallyChangesThePolicy(testCase)
 end
 
 function testPlaybackEntryPointFailsInformatively(testCase)
-    % Agent .mat files are gitignored, so a fresh clone of this repo has none. The error
+    % A caller may still point these entry points at a file that does not exist. The error
     % must say how to regenerate one rather than surfacing a bare load() failure.
     verifyError(testCase, ...
         @() run_trained_agent(true, struct('agent_file', 'no_such_agent_file.mat')), ...

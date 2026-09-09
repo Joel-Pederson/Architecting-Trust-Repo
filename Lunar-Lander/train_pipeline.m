@@ -5,9 +5,17 @@ function results = train_pipeline(opts)
 %   train_pipeline(struct('stages', 3:4))         % resume at DAgger
 %   train_pipeline(struct('n_candidates', 4))     % cheaper, noisier selection
 %
-% Agent and dataset .mat files are gitignored, so a fresh clone has none of them. This is
-% the script that regenerates them. Every stage writes its artefact to the Lunar-Lander
-% folder and can be resumed independently via `opts.stages`.
+% OPTIONAL. cloned_agent_4phase.mat is committed, so a fresh clone can already fly every
+% demo and reproduce every published figure - the agent is evidence rather than a build
+% output, because each headline number was measured on THAT network and retraining draws a
+% different one. Run this to verify the pipeline reproduces, or to train a variant.
+%
+% The large intermediates it consumes and produces (demonstrations.mat, dagger_corpus.mat)
+% ARE gitignored: those are regenerable scratch. Every stage writes its artefact to the
+% Lunar-Lander folder and can be resumed independently via `opts.stages`.
+%
+% After retraining, re-run export_agent_weights so the portable weights stay in sync; a CI
+% test fails if they drift.
 %
 % --- THE FOUR STAGES ---
 %   1 DEMONSTRATE  generate_demonstrations           -> demonstrations.mat

@@ -1,6 +1,14 @@
 *.asv
 *.png
 *.mat
+
+# ...except the trained policy and its portable weights. Every published figure was
+# measured on THIS network - retraining draws a different one - so the agent is evidence,
+# not a build output, and it is committed for the same reason the generated C is. The
+# large intermediates it was built from (demonstrations.mat ~21 MB, dagger_corpus.mat
+# ~50 MB) stay ignored: those are regenerable scratch.
+!Lunar-Lander/cloned_agent_4phase.mat
+!Lunar-Lander/cloned_agent_4phase_weights.mat
 *.log
 
 # macOS Finder metadata
